@@ -149,7 +149,7 @@ static bool adcStart() {
   }
   uint32_t mask = 0;
   for (int i = 0; i < 4; i++) {
-    sChan[i] = sGpio[i] - 1;                 // S3: ADC1_CH0 = GPIO1 ... ADC1_CH8 = GPIO9
+    sChan[i] = sGpio[i] - 1;                 // S3: ADC1_CH0 = GPIO1 ... ADC1_CH9 = GPIO10
     mask |= 1u << sChan[i];
   }
   for (uint32_t hz : kAdcTry) {

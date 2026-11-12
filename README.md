@@ -1,6 +1,6 @@
 # Magneto
 
-PEMF coil controller and monitor on a Seeed XIAO ESP32-S3: a 1 µs-resolution pulse driver with
+PEMF coil controller and monitor on an ESP32-S3: a 1 µs-resolution pulse driver with
 staged treatment plans, two 49E hall sensors doing the actual field measurement (scope, pulse-shape
 fold, FFT), two NTC thermistors running a latched thermal safety gate, and a status RGB + coil LED
 that tell the whole story with no phone attached.
@@ -25,7 +25,7 @@ The control panel is one web page, published two ways:
 | Status RGB R / G / B | GPIO 5 / 6 / 8 | Common anode hardwired to 3V3; series resistor per leg |
 | Coil-rim LED | GPIO 9 | Single color, series resistor |
 
-Every pin is remappable from Settings › Pins (hall sensors and thermistors must stay on GPIO 1-9,
+Every pin is remappable from Settings › Pins (hall sensors and thermistors must stay on GPIO 1-10,
 the ADC1 pins). Pin changes are refused while the coil runs, and a bad combination falls back to
 the defaults instead of bricking the board.
 
@@ -65,7 +65,7 @@ the defaults instead of bricking the board.
 
 ```
 make deps     # arduino-cli + esp32 core 2.0.17
-make build    # compiles ui/app.html -> webui.h, certwindow.h, then the sketch
+make build    # compiles ui/app.html -> webui.h, certwindow.h, then the sketch (esp32:esp32:esp32s3, CDC on boot)
 make flash    # USB
 make ota      # over Wi-Fi
 make test     # host tests: engine, settings parser, update helpers

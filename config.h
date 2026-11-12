@@ -8,10 +8,11 @@
 
 namespace mg {
 
-// Seeed XIAO ESP32-S3. GPIO 1-9 are ADC1 (and general purpose); 21 is the onboard LED (active low);
-// 43/44 are the UART pads, free as outputs because the console is USB CDC.
-inline bool pinAllowed(int p) { return (p >= 1 && p <= 9) || p == 21 || p == 43 || p == 44; }
-inline bool pinAdc(int p) { return p >= 1 && p <= 9; }
+// Generic ESP32-S3 module (Super Mini / DevKit). GPIO 1-18 and 21 are free and safe; GPIO 1-10
+// carry ADC1. Excluded: 0 (boot strap), 19/20 (USB), 26-32 (flash) and higher pins that octal
+// PSRAM modules reserve.
+inline bool pinAllowed(int p) { return (p >= 1 && p <= 18) || p == 21; }
+inline bool pinAdc(int p) { return p >= 1 && p <= 10; }
 
 struct Pins {
   int8_t drive;         // TC4420 input -> MOSFET gate. HIGH = coil on.

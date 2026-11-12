@@ -645,7 +645,7 @@ details.fold>div{padding-bottom:11px}
       <span class="switch"><input type="checkbox" id="p_coilLow"><i></i></span></div>
     <div class="row"><div class="lbl">Status RGB is common-anode</div>
       <span class="switch"><input type="checkbox" id="p_anode"><i></i></span></div>
-    <div class="note small">GPIO 1–9 carry the ADC: the two hall sensors and the two thermistors must live
+    <div class="note small">GPIO 1–10 carry the ADC: the two hall sensors and the two thermistors must live
       there. Pin changes are refused while the coil runs.</div>
   </div>
 
@@ -2026,13 +2026,13 @@ $('#h_gap').addEventListener('change',e=>{cfg.coil.gap=clamp(Number(e.target.val
 const PIN_DEFS=[['drive','Coil drive',false],['hallC','Hall center',true],['hallP','Hall perimeter',true],
   ['thC','Thermistor coil',true],['thF','Thermistor MOSFET',true],['r','RGB red',false],['g','RGB green',false],
   ['b','RGB blue',false],['coil','Coil LED',false]];
-const PIN_ALL=[1,2,3,4,5,6,7,8,9,21,43,44],PIN_ADC=[1,2,3,4,5,6,7,8,9];
+const PIN_ALL=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21],PIN_ADC=[1,2,3,4,5,6,7,8,9,10];
 function fillPins(){
   const host=$('#pinGrid');
   if(!host.childElementCount){
     host.innerHTML=PIN_DEFS.map(d=>'<div><label>'+d[1]+(d[2]?' (ADC)':'')+'</label>'+
       '<select class="txt" data-pin="'+d[0]+'">'+
-      (d[2]?PIN_ADC:PIN_ALL).map(p=>'<option value="'+p+'">GPIO '+p+(p===21?' (LED)':p===43||p===44?' (UART pad)':p===3?' (strap)':'')+'</option>').join('')+
+      (d[2]?PIN_ADC:PIN_ALL).map(p=>'<option value="'+p+'">GPIO '+p+(p===3?' (strap)':'')+'</option>').join('')+
       '</select></div>').join('');
     host.addEventListener('change',e=>{
       const k=e.target.dataset.pin;if(!k)return;

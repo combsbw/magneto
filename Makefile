@@ -1,4 +1,4 @@
-# Magneto - Seeed XIAO ESP32-S3, built with arduino-cli
+# Magneto - ESP32-S3, built with arduino-cli
 #
 #   make ports      list serial ports / boards
 #   make deps       install the esp32 core 2.0.17 (ArduinoOTA, WebServer, Update, DNSServer, ... ship with it)
@@ -13,9 +13,10 @@
 SKETCH     := magneto
 CORE       := esp32:esp32
 CORE_VER   := 2.0.17
-# Seeed XIAO ESP32-S3: 8 MB flash, 8 MB PSRAM, USB CDC console. The default 8 MB partition table
-# already has two app slots, which OTA needs.
-FQBN       ?= esp32:esp32:XIAO_ESP32S3:PSRAM=opi
+# Generic ESP32-S3 module with "USB CDC On Boot" enabled. The default partition scheme already has
+# two app slots, which OTA needs. Add PSRAM=opi (or qspi) if your module has PSRAM - the firmware
+# uses it for longer scope history when present and falls back cleanly when not.
+FQBN       ?= esp32:esp32:esp32s3:CDCOnBoot=cdc
 ESP32_URL  := https://espressif.github.io/arduino-esp32/package_esp32_index.json
 
 CLI        ?= arduino-cli

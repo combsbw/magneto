@@ -2,7 +2,7 @@
 // continuous DMA ADC scan, with waveform rings, running statistics, a phase-folded pulse profile
 // and an FFT of the center-sensor field.
 //
-// All four inputs are ADC1 (GPIO 1-9 on the XIAO ESP32-S3), sampled round-robin by the DMA
+// All four inputs are ADC1 (GPIO 1-10 on the ESP32-S3), sampled round-robin by the DMA
 // controller so Wi-Fi (which owns ADC2) never steals the SAR. Each hall channel is decimated 2:1
 // in volts, converted to microtesla against its stored zero, and kept in a PSRAM ring for the
 // scope. Thermistors are averaged hard (they move at seconds, not microseconds).

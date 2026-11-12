@@ -1,7 +1,7 @@
 /*
- * Magneto - PEMF coil controller and monitor, for the Seeed XIAO ESP32-S3
+ * Magneto - PEMF coil controller and monitor, for the ESP32-S3
  *
- *   Board   : esp32:esp32:XIAO_ESP32S3 (arduino-esp32 core 2.0.17)
+ *   Board   : esp32:esp32:esp32s3 (arduino-esp32 core 2.0.17), USB CDC On Boot = enabled
  *   Wi-Fi   : open soft AP "Magneto" -> http://192.168.4.1 (captive portal opens the page), or after
  *             Settings > Network a home network -> http://magneto.local
  *   Secure  : wss://magneto.local/ws or wss://192.168.4.1/ws for the installed web app (GitHub Pages),
@@ -611,7 +611,7 @@ static void runWebUpdate() {
 
   if (ok) {
     int len = http.getSize();
-    if (len < 200000 || len > 0x330000) ok = updFail(mg::UE_DOWNLOAD, "unexpected file size");
+    if (len < 200000 || len > 0x140000) ok = updFail(mg::UE_DOWNLOAD, "unexpected file size");
     else if (!Update.begin((size_t)len, U_FLASH)) ok = updFail(mg::UE_FLASH, "no room for the update");
     else {
       begun = true;
