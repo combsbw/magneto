@@ -449,7 +449,7 @@ static esp_err_t wsReq(httpd_req_t* req) {
   for (size_t i = 0; i < gNJson; i++) {          /* the status poll and wake are answered here, without a trip through port 80 */
     const TlsJson& j = gJson[i];
     if (j.post != (post ? 1 : 0) || !uriIs(path, j.uri)) continue;
-    char out[460];
+    char out[1400];
     int hn = snprintf(out, sizeof out, "%s 200\n", id);
     int n = j.fn(out + hn, sizeof out - (size_t)hn);
     free(msg);

@@ -899,6 +899,11 @@ static const char* resetName(esp_reset_reason_t r) {
 
 static void onGotIp(arduino_event_id_t) { gotIpFlag = true; }
 
+// Port 443 carries only wss://<board>/ws. The state poll - by far the most frequent call - is
+// answered inside the TLS task; everything else is repeated to the handlers on port 80.
+static int jsonState(char* buf, size_t cap) { lastApiMs = millis(); return stateJson(buf, cap); }
+static const TlsJson TLS_JSON[] = {{"/api/state", 0, jsonState}};
+
 void setup() {
   Serial.begin(115200);
   delay(150);
@@ -966,7 +971,7 @@ void setup() {
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateData);
   server.onNotFound(handleNotFound);
   server.begin();
-  tlsRoutes(nullptr, 0);
+  tlsRoutes(TLS_JSON, sizeof TLS_JSON / sizeof TLS_JSON[0]);
   if (fsOk) tlsPrepare();          // runs on its own task; loop() starts the socket when it lands
 
   ArduinoOTA.setHostname(HOST_NAME);
