@@ -1,0 +1,1985 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0e1116"><title>Magneto</title><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" href="icon-192.png"><link rel="manifest" href="manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magneto"><meta name="apple-mobile-web-app-status-bar-style" content="black"><style>
+/* Magneto - single-source UI. Embedded into firmware (tools/embed_ui.py) and published to GitHub
+   Pages (tools/build_pages.py). Both themes are authored, not derived. */
+:root{
+  --bg:#eef1f5; --bg2:#e4e8ee; --card:#ffffff; --card2:#f6f8fb; --ink:#1b222c; --mut:#5d6878;
+  --line:#dbe1e9; --line2:#ccd4df; --acc:#3f72c4; --acc2:#2f9c86; --warn:#b67817; --bad:#b4342e;
+  --good:#2e8f55; --chipbg:#eaeef4; --thumb:#ffffff; --tile:#f2f5f9; --shadow:0 1px 3px rgba(20,30,50,.08);
+  --accsoft:rgba(63,114,196,.12); --badsoft:rgba(180,52,46,.1); --warnsoft:rgba(182,120,23,.12);
+}
+html[data-th="dark"]{
+  --bg:#0e1116; --bg2:#12161d; --card:#161b23; --card2:#1b2129; --ink:#e7edf5; --mut:#8d99aa;
+  --line:#242c38; --line2:#2e3846; --acc:#6ea8ff; --acc2:#49e0b8; --warn:#e8b45a; --bad:#ff7a6e;
+  --good:#5fd08a; --chipbg:#1d242e; --thumb:#2a3340; --tile:#1a2029; --shadow:0 1px 3px rgba(0,0,0,.35);
+  --accsoft:rgba(110,168,255,.14); --badsoft:rgba(255,122,110,.12); --warnsoft:rgba(232,180,90,.13);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink)}
+body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%;padding-bottom:env(safe-area-inset-bottom)}
+/* iOS: no long-press callouts, no text selection on controls, no double-tap zoom */
+.app{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;
+  max-width:1120px;margin:0 auto;padding:0 12px 48px}
+input,textarea{-webkit-user-select:text;user-select:text}
+button{font:inherit;color:inherit}
+h1,h2,h3{margin:0;font-weight:650}
+a{color:var(--acc)}
+.mut{color:var(--mut)}
+.small{font-size:12.5px}
+.mono{font-variant-numeric:tabular-nums}
+
+/* ---- header ------------------------------------------------------------ */
+.top{display:flex;align-items:center;gap:10px;padding:14px 2px 10px;position:sticky;top:0;z-index:30;
+  background:linear-gradient(var(--bg) 80%,transparent);padding-top:calc(14px + env(safe-area-inset-top))}
+.mark{width:30px;height:30px;border-radius:9px;background:
+  radial-gradient(circle at 50% 50%, var(--warn) 0 17%, transparent 18% 27%, var(--acc2) 28% 38%, transparent 39% 47%,
+  var(--acc) 48% 58%, transparent 59% 67%, var(--acc) 68% 78%, transparent 79%);background-color:#10151c;flex:none}
+.top h1{font-size:19px;letter-spacing:.2px}
+.top .sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:4px 11px;font-size:12.5px;
+  background:var(--chipbg);color:var(--mut);border:1px solid var(--line);white-space:nowrap}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex:none}
+.pill.ok{color:var(--good)} .pill.ok .dot{background:var(--good)}
+.pill.cx{color:var(--warn)} .pill.cx .dot{background:var(--warn);animation:bl 1s infinite}
+@keyframes bl{50%{opacity:.25}}
+.iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+  display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
+
+/* ---- tabs ---------------------------------------------------------------- */
+.tabs{display:flex;gap:6px;margin:2px 0 14px;background:var(--chipbg);border-radius:12px;padding:4px;
+  border:1px solid var(--line)}
+.tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:9px 4px;font-size:14px;
+  color:var(--mut);cursor:pointer;font-weight:550}
+.tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tabpanel{display:none}
+.tabpanel.on{display:block;animation:fin .18s ease}
+@keyframes fin{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
+
+/* ---- cards, grids, tiles ------------------------------------------------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 12px;
+  box-shadow:var(--shadow)}
+.card>h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.card>h2 .sp{flex:1}
+.cgrid{display:grid;grid-template-columns:1fr;gap:0 12px}
+@media(min-width:880px){.cgrid.two{grid-template-columns:1fr 1fr}.cgrid.treat{grid-template-columns:5fr 4fr}}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.tile{background:var(--tile);border:1px solid var(--line);border-radius:11px;padding:9px 10px;min-width:0}
+.tile .l{font-size:11.5px;color:var(--mut);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v{font-size:19px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile .v small{font-size:12px;font-weight:500;color:var(--mut);margin-left:3px}
+.tile .s{font-size:11px;color:var(--mut);margin-top:1px;font-variant-numeric:tabular-nums}
+.tile.hot .v{color:var(--bad)} .tile.warm .v{color:var(--warn)}
+.tile.sel{outline:2px solid var(--acc);outline-offset:-1px}
+
+/* ---- buttons, chips, segments, switches ---------------------------------- */
+.btn{border:1px solid var(--line);background:var(--card2);border-radius:11px;padding:10px 16px;font-size:14.5px;
+  font-weight:600;cursor:pointer;transition:transform .06s}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.good{background:var(--good);border-color:var(--good);color:#fff}
+.btn.warn{background:var(--warnsoft);border-color:var(--warn);color:var(--warn)}
+.btn.bad{background:var(--badsoft);border-color:var(--bad);color:var(--bad)}
+.btn.ghost{background:transparent}
+.btn.big{padding:13px 18px;font-size:16px;border-radius:13px}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:9px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{border:1px solid var(--line);background:var(--chipbg);color:var(--mut);border-radius:99px;
+  padding:7px 13px;font-size:13px;cursor:pointer;font-weight:550}
+.chip.on{background:var(--accsoft);border-color:var(--acc);color:var(--acc)}
+.seg{display:inline-flex;background:var(--chipbg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--mut);border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:550}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.switch{position:relative;width:44px;height:26px;flex:none;cursor:pointer}
+.switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch i{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:.15s}
+.switch i:before{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;
+  top:3px;left:3px;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.switch input:checked+i{background:var(--acc)}
+.switch input:checked+i:before{left:21px}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .lbl{flex:1;min-width:0}
+.row .lbl .small{display:block}
+.num{width:84px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:9px;
+  padding:8px 9px;font-size:14.5px;text-align:right;font-variant-numeric:tabular-nums}
+.num.wide{width:120px}
+.txt{flex:1;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:9px;
+  padding:9px 10px;font-size:14.5px;min-width:0}
+select.txt{appearance:none;-webkit-appearance:none}
+input[type=color]{width:38px;height:30px;border:1px solid var(--line);border-radius:8px;background:var(--card2);padding:2px}
+.note{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px;
+  color:var(--mut);margin:8px 0}
+.note.warn{background:var(--warnsoft);border-color:var(--warn);color:var(--warn)}
+.note.bad{background:var(--badsoft);border-color:var(--bad);color:var(--bad)}
+.note.ok{border-color:var(--good);color:var(--good);background:transparent}
+
+/* ---- treat hero ---------------------------------------------------------- */
+.hero{text-align:center;padding:6px 0 2px}
+.state{font-size:12.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--mut);font-weight:650}
+.state.run{color:var(--good)} .state.pause{color:var(--warn)} .state.trip{color:var(--bad)} .state.done{color:var(--acc2)}
+.clock{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:1px}
+.clock small{font-size:22px;color:var(--mut);font-weight:600}
+.sub{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
+.stagebar{display:flex;gap:4px;height:7px;border-radius:5px;overflow:hidden;margin:10px 2px 2px}
+.stagebar i{flex:1;background:var(--line2);position:relative;overflow:hidden}
+.stagebar i b{position:absolute;inset:0;width:0;background:var(--acc)}
+.ctl{display:flex;gap:9px;justify-content:center;margin:14px 0 4px;flex-wrap:wrap}
+.tripbox{border:1px solid var(--bad);background:var(--badsoft);border-radius:12px;padding:11px 13px;margin:10px 0;
+  color:var(--bad);font-size:13.5px;text-align:left}
+
+/* ---- vertical sliders ---------------------------------------------------- */
+.vsrow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:6px 0 2px}
+.vs{background:var(--tile);border:1px solid var(--line);border-radius:14px;padding:11px 10px 12px;text-align:center;
+  position:relative}
+.vs .t{font-size:12.5px;color:var(--mut);font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+.vs .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin:3px 0 1px}
+.vs .val small{font-size:12px;color:var(--mut);font-weight:500}
+.vs .duty{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+.vtrack{position:relative;height:238px;width:62px;margin:10px auto 8px;border-radius:14px;background:var(--line2);
+  touch-action:none;cursor:pointer}
+.vtrack .fill{position:absolute;left:0;right:0;bottom:0;border-radius:14px;background:linear-gradient(180deg,var(--acc2),var(--acc));opacity:.85}
+.vtrack .th{position:absolute;left:-7px;right:-7px;height:30px;border-radius:10px;background:var(--thumb);
+  border:1px solid var(--line2);box-shadow:0 2px 6px rgba(0,0,0,.25);transform:translateY(50%)}
+.vtrack .ceil{position:absolute;left:-10px;right:-10px;height:0;border-top:2.5px dashed var(--bad);opacity:.75}
+.vtrack .ceil:after{content:"max";position:absolute;right:-4px;top:-16px;font-size:10px;color:var(--bad);font-weight:700}
+.vs.locked .vtrack{opacity:.55;cursor:default}
+.vs .lockb{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);
+  background:var(--card);cursor:pointer;font-size:14px;line-height:1}
+.vs.locked .lockb{background:var(--warnsoft);border-color:var(--warn)}
+.vs .step{display:flex;gap:6px;justify-content:center}
+.vs .step button{width:40px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+  font-size:16px;font-weight:700;cursor:pointer}
+.vs .maxrow{display:flex;gap:5px;align-items:center;justify-content:center;margin-top:8px;font-size:11.5px;color:var(--mut)}
+.vs .maxrow input{width:66px;padding:5px 6px;font-size:12px}
+
+/* ---- stage editor --------------------------------------------------------- */
+.stg{display:grid;grid-template-columns:34px 1fr 1fr 1fr 40px;gap:6px;align-items:center;padding:6px 0;
+  border-bottom:1px solid var(--line)}
+.stg:last-of-type{border-bottom:0}
+.stg input{width:100%}
+.stg .n{font-size:12px;color:var(--mut);text-align:center;font-weight:700}
+.stg.offrow input:not(.onbox),.stg.offrow input[type=color]{opacity:.35;pointer-events:none}
+.stghead{display:grid;grid-template-columns:34px 1fr 1fr 1fr 40px;gap:6px;font-size:10.5px;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px}
+.reprow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.reprow select{width:auto;padding:7px 9px}
+
+/* ---- presets --------------------------------------------------------------- */
+.pre{display:flex;align-items:center;gap:8px;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.pre:last-child{border-bottom:0}
+.pre .nm{flex:1;min-width:0}
+.pre .nm b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pre .nm span{font-size:12px;color:var(--mut)}
+.pre.cur{background:var(--accsoft);border-radius:10px;padding-left:9px;padding-right:6px}
+.pre .ib{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--card);
+  font-size:13px;cursor:pointer;flex:none}
+
+/* ---- charts ---------------------------------------------------------------- */
+.ch{position:relative;width:100%;border-radius:10px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.ch canvas{display:block;width:100%;height:100%}
+.ch .cap{position:absolute;left:8px;top:6px;font-size:11px;color:var(--mut);pointer-events:none;
+  font-variant-numeric:tabular-nums}
+.ch.h160{height:160px}.ch.h200{height:200px}.ch.h240{height:240px}
+.chbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}
+.chbar .sp{flex:1}
+
+/* ---- coil visual + formulas -------------------------------------------------- */
+.coilviz{width:100%;display:block}
+.dim{font-size:10px;fill:var(--mut)}
+math{font-size:17px}
+.formula{padding:9px 6px;border-bottom:1px solid var(--line);overflow-x:auto}
+.formula:last-child{border-bottom:0}
+.formula .fl{font-size:12px;color:var(--mut);margin-bottom:2px}
+details.fold{border:1px solid var(--line);border-radius:11px;background:var(--card2);margin:8px 0;padding:0 12px}
+details.fold summary{padding:11px 0;font-weight:600;font-size:14px;cursor:pointer;list-style:none;display:flex;align-items:center}
+details.fold summary:after{content:"›";margin-left:auto;font-size:18px;color:var(--mut);transform:rotate(90deg);transition:.15s}
+details.fold[open] summary:after{transform:rotate(-90deg)}
+details.fold>div{padding-bottom:11px}
+
+/* ---- misc ---------------------------------------------------------------------- */
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13.5px}
+.kv b{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.bar{height:8px;border-radius:5px;background:var(--line2);overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:5px;transition:width .3s}
+.pinwarn{display:none}
+.pinwarn.show{display:block}
+.pingrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pingrid label{font-size:11.5px;color:var(--mut);display:block;margin-bottom:3px}
+.pingrid select{width:100%}
+.updpct{font-size:13px;color:var(--mut)}
+.hide{display:none!important}
+.flex{display:flex;align-items:center;gap:8px}
+.wrap{flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.right{text-align:right}
+.center{text-align:center}
+.mt8{margin-top:8px}.mt12{margin-top:12px}.mb8{margin-bottom:8px}
+</style></head><body><div class="app">
+<div class="top">
+  <div class="mark"></div>
+  <h1>Magneto</h1>
+  <div class="sp"></div>
+  <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">Offline</span></span>
+  <button class="iconbtn" id="themeBtn" title="Theme">◐</button>
+</div>
+
+<div class="tabs" id="tabs">
+  <button data-tab="treat" class="on">Treat</button>
+  <button data-tab="coil">Coil</button>
+  <button data-tab="measure">Measure</button>
+  <button data-tab="set">Settings</button>
+</div>
+
+<!-- ================= TREAT ================= -->
+<div class="tabpanel on" id="tab-treat">
+<div class="cgrid treat">
+<div>
+  <div class="card">
+    <div class="hero">
+      <div class="state" id="stName">IDLE</div>
+      <div class="clock mono" id="clock">0:00</div>
+      <div class="sub" id="clockSub">ready</div>
+      <div class="stagebar" id="stageBar"></div>
+      <div class="sub mt8" id="stageTxt"></div>
+    </div>
+    <div class="tripbox hide" id="tripBox"></div>
+    <div class="note warn hide" id="probeNote">A thermistor is not answering, so the safety gate will refuse to
+      start. Check the probes, or change the probe requirement under Settings &gt; Safety.</div>
+    <div class="ctl">
+      <button class="btn pri big" id="btnStart">Start</button>
+      <button class="btn big hide" id="btnPause">Pause</button>
+      <button class="btn bad big hide" id="btnStop">Stop</button>
+      <button class="btn sm ghost hide" id="btnResetT">Reset time</button>
+      <button class="btn warn big hide" id="btnTripReset">Reset safety stop</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Drive <span class="sp"></span><span class="small mut mono" id="dutyTop"></span></h2>
+    <div class="vsrow">
+      <div class="vs" id="vsHz">
+        <button class="lockb" title="Lock the slider">🔓</button>
+        <div class="t">FREQUENCY</div>
+        <div class="val mono"><span>10.0</span><small> Hz</small></div>
+        <div class="vtrack"><div class="fill"></div><div class="ceil hide"></div><div class="th"></div></div>
+        <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
+        <div class="maxrow">ceiling <input class="num" type="number" min="0" max="250" step="0.1" placeholder="off"> Hz</div>
+      </div>
+      <div class="vs" id="vsPw">
+        <button class="lockb" title="Lock the slider">🔓</button>
+        <div class="t">PULSE WIDTH</div>
+        <div class="val mono"><span>100</span><small> µs</small></div>
+        <div class="vtrack"><div class="fill"></div><div class="ceil hide"></div><div class="th"></div></div>
+        <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
+        <div class="maxrow">ceiling <input class="num" type="number" min="0" step="1" placeholder="off"> µs</div>
+      </div>
+    </div>
+    <div class="note small">Duty is reported, not set: it follows frequency × pulse width. Ceilings can only be
+      changed while the coil is off; the lock button freezes a slider against accidental touches.</div>
+  </div>
+
+  <div class="card">
+    <h2>Live</h2>
+    <div class="tiles" id="liveTiles">
+      <div class="tile"><div class="l">|B| center</div><div class="v mono" id="lvB0">—</div><div class="s" id="lvB0s"></div></div>
+      <div class="tile"><div class="l">dB/dt peak</div><div class="v mono" id="lvDb">—</div><div class="s">since clear</div></div>
+      <div class="tile"><div class="l">B at depth</div><div class="v mono" id="lvBd">—</div><div class="s" id="lvBdS">est · model × meas</div></div>
+      <div class="tile"><div class="l">Measured freq</div><div class="v mono" id="lvF">—</div><div class="s" id="lvFs"></div></div>
+      <div class="tile" id="tileTc"><div class="l">Coil temp</div><div class="v mono" id="lvTc">—</div><div class="s" id="lvTcS"></div></div>
+      <div class="tile" id="tileTf"><div class="l">MOSFET temp</div><div class="v mono" id="lvTf">—</div><div class="s" id="lvTfS"></div></div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Timer</h2>
+    <div class="chips" id="timerChips">
+      <button class="chip" data-min="0">Open</button>
+      <button class="chip" data-min="10">10m</button>
+      <button class="chip" data-min="15">15m</button>
+      <button class="chip" data-min="20">20m</button>
+      <button class="chip on" data-min="30">30m</button>
+      <button class="chip" data-min="45">45m</button>
+      <button class="chip" data-min="60">60m</button>
+      <button class="chip" data-min="-1" id="chipCustom">Custom</button>
+    </div>
+    <div class="flex mt8 hide" id="customRow">
+      <input class="num" id="customMin" type="number" min="1" max="360" step="1" value="25"> <span class="small mut">minutes</span>
+    </div>
+    <div class="note small" id="timerNote">The timer sets the length of a single-stage treatment. With stages
+      enabled below, each stage carries its own length instead.</div>
+  </div>
+
+  <div class="card">
+    <h2>Stages <span class="sp"></span>
+      <label class="flex small mut">use stages <span class="switch"><input type="checkbox" id="stagesOn"><i></i></span></label>
+    </h2>
+    <div id="stagesBody" class="hide">
+      <div class="stghead"><span></span><span>Hz</span><span>pulse µs</span><span>mm:ss</span><span>color</span></div>
+      <div id="stageRows"></div>
+      <div class="reprow">
+        <span class="mut small">Repeat</span>
+        <select class="txt" id="repFrom"></select>
+        <span class="mut small">through</span>
+        <select class="txt" id="repTo"></select>
+        <span class="mut small">×</span>
+        <select class="txt" id="repN"></select>
+      </div>
+      <div class="kv mt8"><span class="mut">Planned total</span><b id="planTotal">—</b></div>
+    </div>
+    <div class="small mut" id="stagesOffNote">Up to five stages, each with its own frequency, pulse width,
+      length and LED color, plus an optional repeat of a span of stages.</div>
+  </div>
+
+  <div class="card">
+    <h2>Setups</h2>
+    <div class="flex">
+      <input class="txt" id="preName" maxlength="24" placeholder="Name this setup">
+      <button class="btn sm pri" id="preSave">Save</button>
+    </div>
+    <div class="small mut mt8 hide" id="preHint"></div>
+    <div id="preList"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ================= COIL ================= -->
+<div class="tabpanel" id="tab-coil">
+<div class="cgrid two">
+<div>
+  <div class="card">
+    <h2>Coil geometry</h2>
+    <svg id="coilViz" class="coilviz" viewBox="0 0 560 300"></svg>
+    <div class="chbar mt8">
+      <span class="small mut">Target depth</span>
+      <input type="range" id="depthSlider" min="0.5" max="15" step="0.1" value="2" style="flex:1">
+      <b class="mono small" id="depthVal">2.0 cm</b>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Windings</h2>
+    <div class="row"><div class="lbl">Layer 1 turns<span class="small mut">closest to the face</span></div>
+      <input class="num" id="c_l1t" type="number" min="1" max="200" step="1"></div>
+    <div class="row"><div class="lbl">Layer 1 wire</div>
+      <select class="txt" id="c_l1awg" style="max-width:150px"></select></div>
+    <div class="row"><div class="lbl">Layer 2 turns<span class="small mut">0 = single layer</span></div>
+      <input class="num" id="c_l2t" type="number" min="0" max="200" step="1"></div>
+    <div class="row"><div class="lbl">Layer 2 wire</div>
+      <select class="txt" id="c_l2awg" style="max-width:150px"></select></div>
+    <div class="row"><div class="lbl">Open center radius<span class="small mut">start of the winding</span></div>
+      <input class="num" id="c_rin" type="number" min="0.1" max="20" step="0.1"> <span class="small mut">cm</span></div>
+    <div class="row"><div class="lbl">Insulation per side<span class="small mut">PVC coating thickness</span></div>
+      <input class="num" id="c_ins" type="number" min="0" max="2" step="0.05"> <span class="small mut">mm</span></div>
+    <div class="row"><div class="lbl">Center washer<span class="small mut">ferromagnetic backing - not modeled,
+      shown for the record</span></div>
+      <span class="switch"><input type="checkbox" id="c_washer"><i></i></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Circuit</h2>
+    <div class="row"><div class="lbl">Supply</div><input class="num" id="c_v" type="number" min="1" max="60" step="0.5"> <span class="small mut">V</span></div>
+    <div class="row"><div class="lbl">Measured inductance<span class="small mut">0 = use the estimate</span></div>
+      <input class="num" id="c_luh" type="number" min="0" step="0.1"> <span class="small mut">µH</span></div>
+    <div class="row"><div class="lbl">Measured DC resistance<span class="small mut">0 = use the estimate</span></div>
+      <input class="num" id="c_rm" type="number" min="0" step="1"> <span class="small mut">mΩ</span></div>
+    <div class="row"><div class="lbl">MOSFET R<sub>DS(on)</sub></div><input class="num" id="c_rds" type="number" min="0" step="1"> <span class="small mut">mΩ</span></div>
+    <div class="row"><div class="lbl">Flyback diode drop</div><input class="num" id="c_vf" type="number" min="0" max="3" step="0.05"> <span class="small mut">V</span></div>
+    <div class="note small">Measured L and R carry the model. The geometry estimates below are theoretical
+      coil specs - cross-checks, not the source of the field numbers (the hall sensors are).</div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Theoretical coil <span class="sp"></span><span class="small mut" id="coilDrive"></span></h2>
+    <div class="tiles" id="coilTiles"></div>
+  </div>
+  <div class="card">
+    <h2>Field with distance</h2>
+    <div class="ch h200"><canvas id="chAxial"></canvas><div class="cap">|B| on axis vs distance from the face</div></div>
+    <div class="ch h200 mt8"><canvas id="chRadial"></canvas><div class="cap" id="capRadial">|B| across the face</div></div>
+  </div>
+  <div class="card">
+    <h2>Predicted current, one cycle</h2>
+    <div class="ch h160"><canvas id="chPulse"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>Formulas</h2>
+    <div id="formulas"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ================= MEASURE ================= -->
+<div class="tabpanel" id="tab-measure">
+<div class="cgrid two">
+<div>
+  <div class="card">
+    <h2>Field <span class="sp"></span><span class="pill hide" id="clipPill"><span class="dot"></span>clipping</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="l">|B| center</div><div class="v mono" id="mB0">—</div><div class="s" id="mB0s"></div></div>
+      <div class="tile"><div class="l">|B| perimeter</div><div class="v mono" id="mB1">—</div><div class="s" id="mB1s"></div></div>
+      <div class="tile"><div class="l">dB/dt</div><div class="v mono" id="mDb">—</div><div class="s">center, live</div></div>
+      <div class="tile"><div class="l">Measured freq</div><div class="v mono" id="mF">—</div><div class="s" id="mFs"></div></div>
+    </div>
+    <div class="chips mt8">
+      <button class="chip" id="zero0">Zero center</button>
+      <button class="chip" id="zero1">Zero perimeter</button>
+      <button class="chip" id="zeroBoth">Zero both</button>
+      <button class="chip" id="zeroClr">Clear zero</button>
+    </div>
+    <div class="small mut mt8" id="zeroInfo"></div>
+  </div>
+
+  <div class="card">
+    <h2>Since clear <span class="sp"></span><span class="small mut mono" id="statWin"></span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="l">|B| max center</div><div class="v mono" id="sMax0">—</div><div class="s" id="sMax0d"></div></div>
+      <div class="tile"><div class="l">|B| max perim</div><div class="v mono" id="sMax1">—</div></div>
+      <div class="tile"><div class="l">dB/dt max</div><div class="v mono" id="sDbm">—</div><div class="s" id="sDbmD"></div></div>
+      <div class="tile"><div class="l">B mean center</div><div class="v mono" id="sAvg0">—</div><div class="s" id="sAvg0d"></div></div>
+      <div class="tile"><div class="l">B mean perim</div><div class="v mono" id="sAvg1">—</div></div>
+      <div class="tile"><div class="l">B RMS center</div><div class="v mono" id="sRms">—</div></div>
+    </div>
+    <div class="chips mt8">
+      <button class="chip" id="clrMax">Clear peaks</button>
+      <button class="chip" id="clrAvg">Clear averages</button>
+      <button class="chip" id="clrAll">Clear all</button>
+    </div>
+    <div class="small mut mt8">“at depth” values are the measured numbers carried to the target depth through the
+      coil model, scaled to the center sensor.</div>
+  </div>
+
+  <div class="card">
+    <h2>Field across the face</h2>
+    <div class="ch h200"><canvas id="chFace"></canvas><div class="cap">model scaled to both sensors · face and depth</div></div>
+    <div class="kv"><span class="mut">Model ↔ sensors agreement</span><b id="fitTxt">—</b></div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Scope</h2>
+    <div class="chbar">
+      <div class="seg" id="scopeSrc">
+        <button data-ch="0" class="on">B center</button>
+        <button data-ch="1">B perim</button>
+        <button data-ch="2">dB/dt</button>
+      </div>
+      <div class="sp"></div>
+      <button class="btn sm" id="scopeHold">Hold</button>
+    </div>
+    <div class="chips mb8" id="scopeSpan">
+      <button class="chip" data-ms="50">50 ms</button>
+      <button class="chip" data-ms="200">200 ms</button>
+      <button class="chip on" data-ms="1000">1 s</button>
+      <button class="chip" data-ms="3000">3 s</button>
+      <button class="chip" data-ms="10000">10 s</button>
+    </div>
+    <div class="ch h240"><canvas id="chScope"></canvas><div class="cap" id="scopeCap"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Pulse shape</h2>
+    <div class="ch h200"><canvas id="chFold"></canvas><div class="cap" id="foldCap"></div></div>
+    <div class="small mut mt8">Solid: the measured field folded over many pulse cycles (a sampling-scope view).
+      Dashed: the RL circuit model scaled to the measured amplitude - it carries the microsecond edges the
+      sampler cannot see.</div>
+  </div>
+
+  <div class="card">
+    <h2>Spectrum</h2>
+    <div class="ch h200"><canvas id="chSpec"></canvas><div class="cap" id="specCap"></div></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="tabpanel" id="tab-set">
+<div class="cgrid two">
+<div>
+  <div class="card">
+    <h2>Connection</h2>
+    <div id="connBody"></div>
+  </div>
+
+  <div class="card">
+    <h2>Update</h2>
+    <div id="updBody"></div>
+  </div>
+
+  <div class="card">
+    <h2>Safety</h2>
+    <div class="row"><div class="lbl">Temperature unit</div>
+      <div class="seg" id="unitSeg"><button data-u="F" class="on">°F</button><button data-u="C">°C</button></div></div>
+    <div class="row"><div class="lbl">Coil max <span class="small mut" id="safeU1"></span></div>
+      <input class="num" id="s_coilMax" type="number" step="1"></div>
+    <div class="row"><div class="lbl">MOSFET max <span class="small mut" id="safeU2"></span></div>
+      <input class="num" id="s_fetMax" type="number" step="1"></div>
+    <div class="row"><div class="lbl">Coil rise limit <span class="small mut" id="safeU3"></span></div>
+      <input class="num" id="s_coilRate" type="number" step="1"></div>
+    <div class="row"><div class="lbl">MOSFET rise limit <span class="small mut" id="safeU4"></span></div>
+      <input class="num" id="s_fetRate" type="number" step="1"></div>
+    <div class="row"><div class="lbl">Thermal shutoff<span class="small mut">trips the coil off at a limit</span></div>
+      <span class="switch"><input type="checkbox" id="s_on"><i></i></span></div>
+    <div class="row"><div class="lbl">Require reset after a trip</div>
+      <span class="switch"><input type="checkbox" id="s_needReset"><i></i></span></div>
+    <div class="row"><div class="lbl">Require both probes to start</div>
+      <span class="switch"><input type="checkbox" id="s_needProbe"><i></i></span></div>
+    <div class="note bad hide" id="bypassNote">Thermal shutoff is OFF. The coil will not stop itself on
+      temperature - watch it yourself.</div>
+    <div class="flex mt8">
+      <button class="btn sm" id="safeSaveDef">Save as my defaults</button>
+      <button class="btn sm ghost" id="safeLoadDef">Restore my defaults</button>
+      <button class="btn sm ghost" id="safeFactory">Factory values</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Status LEDs</h2>
+    <div class="row"><div class="lbl">While running</div>
+      <select class="txt" id="l_mode" style="max-width:200px">
+        <option value="0">Fixed color</option>
+        <option value="1">Stage colors / sweep</option>
+        <option value="2">Data feedback</option>
+      </select></div>
+    <div class="row" id="rowLedCol"><div class="lbl">Color</div><input type="color" id="l_col"></div>
+    <div class="row hide" id="rowLedSrc"><div class="lbl">Feedback source</div>
+      <select class="txt" id="l_src" style="max-width:200px">
+        <option value="0">Coil temperature</option>
+        <option value="1">MOSFET temperature</option>
+        <option value="2">|B| average</option>
+        <option value="3">dB/dt max</option>
+      </select></div>
+    <div class="row hide" id="rowLedRange"><div class="lbl">Blue ↔ red range</div>
+      <input class="num" id="l_min" type="number" step="1"> <span class="mut">to</span>
+      <input class="num" id="l_max" type="number" step="1"></div>
+    <div class="row"><div class="lbl">Status LED brightness</div>
+      <input type="range" id="l_master" min="5" max="100" step="5" style="flex:1"></div>
+    <div class="row"><div class="lbl">Coil LED brightness</div>
+      <input type="range" id="l_coil" min="0" max="100" step="5" style="flex:1"></div>
+    <details class="fold"><summary>LED pattern language</summary><div class="small mut" id="ledLegend"></div></details>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Sensors</h2>
+    <div class="row"><div class="lbl">Center hall sensitivity<span class="small mut">49E ≈ 1.4 mV/G at 5 V</span></div>
+      <input class="num" id="h_sc" type="number" min="0.1" step="0.05"> <span class="small mut">mV/G</span></div>
+    <div class="row"><div class="lbl">Perimeter hall sensitivity</div>
+      <input class="num" id="h_sp" type="number" min="0.1" step="0.05"> <span class="small mut">mV/G</span></div>
+    <div class="row"><div class="lbl">Hall supply</div>
+      <input class="num" id="h_vcc" type="number" min="2.5" max="5.5" step="0.1"> <span class="small mut">V</span></div>
+    <div class="row"><div class="lbl">Ratiometric<span class="small mut">sensitivity scales with the supply</span></div>
+      <span class="switch"><input type="checkbox" id="h_ratio"><i></i></span></div>
+    <div class="row"><div class="lbl">NTC beta</div><input class="num" id="t_beta" type="number" min="1000" max="8000" step="10"></div>
+    <div class="row"><div class="lbl">NTC R at 25 °C</div><input class="num" id="t_r0" type="number" min="0.5" step="0.5"> <span class="small mut">kΩ</span></div>
+    <div class="row"><div class="lbl">Divider resistor</div><input class="num" id="t_rs" type="number" min="0.5" step="0.5"> <span class="small mut">kΩ</span></div>
+    <div class="row"><div class="lbl">NTC wired to 3V3<span class="small mut">off = NTC to ground</span></div>
+      <span class="switch"><input type="checkbox" id="t_top"><i></i></span></div>
+    <div class="row"><div class="lbl">Sensor spacing<span class="small mut">hall face to winding plane</span></div>
+      <input class="num" id="h_gap" type="number" min="0" max="20" step="0.5"> <span class="small mut">mm</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Pins</h2>
+    <div class="pingrid" id="pinGrid"></div>
+    <div class="note bad pinwarn" id="pinWarn">A pin is used twice, or a sensor is on a pin without ADC.
+      The board keeps its previous wiring until this is fixed.</div>
+    <div class="row mt8"><div class="lbl">Coil LED is active-low</div>
+      <span class="switch"><input type="checkbox" id="p_coilLow"><i></i></span></div>
+    <div class="row"><div class="lbl">Status RGB is common-anode</div>
+      <span class="switch"><input type="checkbox" id="p_anode"><i></i></span></div>
+    <div class="note small">GPIO 1–9 carry the ADC: the two hall sensors and the two thermistors must live
+      there. Pin changes are refused while the coil runs.</div>
+  </div>
+
+  <div class="card">
+    <h2>Device</h2>
+    <div id="devBody"></div>
+    <div class="flex mt8">
+      <button class="btn sm warn" id="btnReboot">Reboot</button>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<script>
+'use strict';
+/* ================= utilities ================= */
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const fmt=(v,d)=>Number.isFinite(v)?v.toFixed(d===undefined?1:d):'—';
+function fmtSec(s){s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h?h+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0'):m+':'+String(x).padStart(2,'0');}
+function fmtUs(us){if(us>=1e6)return fmt(us/1e6,2)+' s';if(us>=1000)return fmt(us/1000,us>=10000?1:2)+' ms';return Math.round(us)+' µs';}
+function fmtUT(ut){const a=Math.abs(ut);if(a>=1e6)return[fmt(ut/1e6,2),'T'];if(a>=1000)return[fmt(ut/1000,a>=10000?1:2),'mT'];return[fmt(ut,a>=100?0:1),'µT'];}
+function fmtHzV(h){return h>=100?fmt(h,0):fmt(h,h>=10?1:2);}
+const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
+function store(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+// two-tap confirm: first tap arms the button for 3 s (confirm() is unavailable on the embedded page)
+const ARMED=new Map();
+function twoTap(btn,fn,txt){const old=btn.textContent;
+  if(ARMED.has(btn)){clearTimeout(ARMED.get(btn));ARMED.delete(btn);btn.textContent=old===txt?btn.dataset.l0||old:old;fn();return;}
+  btn.dataset.l0=old;btn.textContent=txt||'Tap again';
+  ARMED.set(btn,setTimeout(()=>{ARMED.delete(btn);btn.textContent=btn.dataset.l0;},3000));}
+
+/* ================= theme ================= */
+function applyTheme(t){document.documentElement.dataset.th=t;store('mg-theme',t);}
+applyTheme(load('mg-theme',matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
+$('#themeBtn').onclick=()=>applyTheme(document.documentElement.dataset.th==='dark'?'light':'dark');
+
+/* ================= tabs ================= */
+let TAB='treat';
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  TAB=b.dataset.tab;
+  $$('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  $$('.tabpanel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+TAB));
+  if(TAB==='coil')coilRecalc();
+  if(TAB==='measure')measureKick();
+});
+
+/* ================= transport =================
+   Served from the board (plain http): ordinary fetch, same origin.
+   Installed app (GitHub Pages, https): one secure WebSocket, wss://<board>/ws, carrying
+   "<id> <METHOD> <path>[ f]\n<body>"  ->  "<id> <status>\n<body>"  (the same API either way). */
+const HOSTN=location.hostname;
+const ONDEV=location.protocol==='http:'&&(HOSTN==='192.168.4.1'||HOSTN==='magneto.local'||/\.local$/.test(HOSTN)||HOSTN==='localhost');
+const TARGETS=[{name:'Home network',host:'magneto.local'},{name:'Direct (Magneto Wi-Fi)',host:'192.168.4.1'}];
+const DEV={on:false,label:'',offlineWhy:''};
+const WS={sock:null,wait:new Map(),id:1,target:load('mg-target',0),retryAt:0,trying:false};
+
+function connRender(){const p=$('#connPill'),t=$('#connTxt');
+  p.classList.remove('ok','cx');
+  if(DEV.on){p.classList.add('ok');t.textContent=DEV.label||'Connected';}
+  else if(WS.trying){p.classList.add('cx');t.textContent='Connecting…';}
+  else t.textContent=ONDEV?'Offline':'Not connected';
+  renderConnCard&&renderConnCard();}
+
+function wsClose(){if(WS.sock){try{WS.sock.close();}catch(e){}WS.sock=null;}
+  for(const w of WS.wait.values())w.rej(new Error('closed'));WS.wait.clear();}
+
+function wsConnect(ti){return new Promise(res=>{
+  const host=TARGETS[ti].host;let s;
+  try{s=new WebSocket('wss://'+host+'/ws');}catch(e){res(false);return;}
+  let done=false;
+  const to=setTimeout(()=>{if(!done){done=true;try{s.close();}catch(e){}res(false);}},12000);
+  s.onopen=()=>{if(done)return;done=true;clearTimeout(to);
+    WS.sock=s;DEV.on=true;DEV.label=TARGETS[ti].name;WS.target=ti;store('mg-target',ti);
+    connRender();onConnected();res(true);};
+  s.onmessage=ev=>{const m=String(ev.data),nl=m.indexOf('\n');if(nl<0)return;
+    const head=m.slice(0,nl),body=m.slice(nl+1),sp=head.indexOf(' ');
+    const id=head.slice(0,sp),st=Number(head.slice(sp+1)),w=WS.wait.get(id);
+    if(!w)return;WS.wait.delete(id);
+    if(st>=200&&st<300){try{w.res(body?JSON.parse(body):null);}catch(e){w.rej(new Error('bad json'));}}
+    else{let err='http '+st;try{err=JSON.parse(body).err||err;}catch(e){}w.rej(Object.assign(new Error(err),{status:st}));}};
+  s.onclose=()=>{clearTimeout(to);if(WS.sock===s){wsClose();DEV.on=false;connRender();}
+    if(!done){done=true;res(false);}};
+  s.onerror=()=>{};
+});}
+
+let connectBusy=false;
+async function connectNow(){
+  if(ONDEV||DEV.on||connectBusy)return;
+  connectBusy=true;WS.trying=true;connRender();
+  const order=WS.target===1?[1,0]:[0,1];
+  for(const ti of order){if(await wsConnect(ti))break;}
+  WS.trying=false;connectBusy=false;connRender();
+}
+
+function api(path,opt){
+  opt=opt||{};
+  if(ONDEV){
+    return fetch(path,{method:opt.method||'GET',headers:opt.form?{'Content-Type':'application/x-www-form-urlencoded'}:(opt.body!=null?{'Content-Type':'text/plain'}:undefined),body:opt.body})
+      .then(r=>{DEV.on=true;DEV.label='This device';connRender();
+        return r.text().then(tx=>{if(!r.ok){let e='http '+r.status;try{e=JSON.parse(tx).err||e;}catch(_){}
+          throw Object.assign(new Error(e),{status:r.status});}return tx?JSON.parse(tx):null;});})
+      .catch(e=>{if(e&&e.status)throw e;DEV.on=false;connRender();throw e;});
+  }
+  return new Promise((res,rej)=>{
+    if(!WS.sock||WS.sock.readyState!==1){rej(new Error('offline'));return;}
+    const id=String(WS.id++);
+    WS.wait.set(id,{res,rej});
+    setTimeout(()=>{if(WS.wait.has(id)){WS.wait.delete(id);rej(new Error('timeout'));}},12000);
+    WS.sock.send(id+' '+(opt.method||'GET')+' '+path+(opt.form?' f':'')+'\n'+(opt.body==null?'':String(opt.body)));
+  });
+}
+const apiQuiet=(p,o)=>api(p,o).catch(()=>null);
+
+/* ================= configuration ================= */
+const AWGS=[8,10,12,14,16,18,20,22,24];
+function defCfg(){return{
+  pins:{drive:7,hallC:1,hallP:2,thC:3,thF:4,r:5,g:6,b:8,coil:9,anode:true,coilLow:false},
+  run:{stages:[
+    {on:true,hz:10,pw:100,sec:1800,col:'#50c8ff'},
+    {on:false,hz:20,pw:100,sec:600,col:'#49e0b8'},
+    {on:false,hz:40,pw:50,sec:600,col:'#b388ff'},
+    {on:false,hz:7.8,pw:200,sec:600,col:'#ffd166'},
+    {on:false,hz:100,pw:20,sec:600,col:'#ff8fa3'}],
+    rFrom:-1,rTo:-1,rN:1},
+  max:{hz:0,pw:0},
+  safe:{coilMax:110,fetMax:140,coilRate:20,fetRate:20,on:true,needReset:true,needProbe:true},
+  led:{mode:0,col:'#50c8ff',master:80,dataSrc:0,dataMin:70,dataMax:110,coilBright:100},
+  hall:{sens5c:1.4,sens5p:1.4,vcc:3.3,ratio:true},
+  therm:{beta:3950,r0:10,rs:10,top:false},
+  coil:{l1t:25,l1awg:20,l2t:25,l2awg:12,rin:0.75,ins:0.3,washer:true,v:24,luh:0,rm:0,rds:10,vf:0.45,depth:2,gap:2},
+  ui:{stagesOn:false,timerMin:30,lockHz:false,lockPw:false}
+};}
+function normalize(c){
+  const d=defCfg(),o=JSON.parse(JSON.stringify(d));
+  if(!c||typeof c!=='object')return o;
+  const mrg=(dst,src)=>{for(const k in dst){if(src&&typeof src[k]!=='undefined'){
+    if(dst[k]&&typeof dst[k]==='object'&&!Array.isArray(dst[k]))mrg(dst[k],src[k]);
+    else dst[k]=src[k];}}};
+  mrg(o,c);
+  if(Array.isArray(c.run&&c.run.stages))for(let i=0;i<5;i++)if(c.run.stages[i])mrg(o.run.stages[i],c.run.stages[i]);
+  for(const s of o.run.stages){s.hz=clamp(Math.round(s.hz*10)/10,0,250);s.pw=clamp(Math.round(s.pw),1,500000);
+    s.sec=clamp(Math.round(s.sec),0,21600);}
+  o.max.hz=clamp(o.max.hz||0,0,250);o.max.pw=clamp(o.max.pw||0,0,500000);
+  return o;}
+let cfg=normalize(load('mg-cfg-v1',null));
+let cfgRev=0,cfgPushing=0;
+const cfgLocal=debounce(()=>store('mg-cfg-v1',cfg),300);
+const cfgPush=debounce(async()=>{
+  if(!DEV.on)return;
+  cfgPushing++;
+  try{const r=await api('/api/config',{method:'POST',body:JSON.stringify(cfg)});
+    if(r&&r.rev)cfgRev=r.rev;
+    if(r&&r.pins===false){$('#pinWarn').classList.add('show');}
+  }catch(e){}
+  cfgPushing--;
+},350);
+function touch(){cfgLocal();cfgPush();renderPlanInfo();renderPresets();}
+async function cfgPull(){
+  const r=await apiQuiet('/api/config');
+  if(r&&Object.keys(r).length){cfg=normalize(r);store('mg-cfg-v1',cfg);fillAll();}
+  else if(r!==null){cfgPush();}       // a fresh board: seed it with our local settings
+}
+async function onConnected(){
+  await cfgPull();
+  presetsLoad();
+  pollNow();
+  renderUpdateCard&&renderUpdateCard();
+}
+/* ================= physics =================
+   The coil is modeled as concentric circular turns (a wound spiral collapses to rings with
+   negligible error). Fields come from the exact loop solution with complete elliptic integrals,
+   inductance from self-inductance plus the full Maxwell mutual sum, and the drive current from
+   the analytic RL exponential with the flyback leg. All SI inside; cm/µH/mΩ at the edges. */
+const MU0=1.2566370614e-6;
+const AWG={8:[3.264,0.002061],10:[2.588,0.003277],12:[2.053,0.005211],14:[1.628,0.008286],
+  16:[1.291,0.01317],18:[1.024,0.02095],20:[0.812,0.03331],22:[0.644,0.05296],24:[0.511,0.08422]};
+
+// complete elliptic integrals K(m), E(m) by the arithmetic-geometric mean; m = k^2
+function ellipKE(m){
+  if(m>=1)return[1e12,1];
+  let a=1,b=Math.sqrt(1-m),c=Math.sqrt(m),sum=c*c/2,pow=0.25;
+  for(let i=0;i<40&&c>1e-14;i++){
+    const an=(a+b)/2;c=(a-b)/2;b=Math.sqrt(a*b);a=an;
+    sum+=pow*c*c*4;pow*=2;          // sum of 2^(n-1) c_n^2 with c in the halved convention
+  }
+  const K=Math.PI/(2*a);
+  return[K,K*(1-sum)];
+}
+// field of one loop (radius a at z=0) at (rho, z), per ampere: [Bz, Brho] tesla
+function loopB(a,rho,z){
+  if(rho<1e-9){const d=a*a+z*z;return[MU0*a*a/(2*Math.pow(d,1.5)),0];}
+  const d1=(a+rho)*(a+rho)+z*z, d2=(a-rho)*(a-rho)+z*z;
+  const m=4*a*rho/d1, ke=ellipKE(m), K=ke[0], E=ke[1], q=MU0/(2*Math.PI*Math.sqrt(d1));
+  const Bz=q*(K+E*(a*a-rho*rho-z*z)/d2);
+  const Br=q*(z/rho)*(-K+E*(a*a+rho*rho+z*z)/d2);
+  return[Bz,Br];
+}
+// the coil as turns: [{a: radius m, z: plane m, bare: m}] with the face at z = 0, winding above it
+function buildTurns(C){
+  const out=[];
+  const w1=AWG[C.l1awg][0]/1000+2*C.ins/1000, w2=AWG[C.l2awg][0]/1000+2*C.ins/1000;
+  const rin=C.rin/100;
+  for(let i=0;i<C.l1t;i++)out.push({a:rin+(i+0.5)*w1,z:w1/2,bare:AWG[C.l1awg][0]/2000,awg:C.l1awg});
+  for(let i=0;i<C.l2t;i++)out.push({a:rin+(i+0.5)*w2,z:w1+w2/2,bare:AWG[C.l2awg][0]/2000,awg:C.l2awg});
+  return out;
+}
+function coilOuterR(C){
+  const w1=AWG[C.l1awg][0]/1000+2*C.ins/1000, w2=AWG[C.l2awg][0]/1000+2*C.ins/1000;
+  return C.rin/100+Math.max(C.l1t*w1,C.l2t*w2);
+}
+// field at (rho, z<0 below the face) per ampere
+function coilBperA(turns,rho,z){
+  let bz=0,br=0;
+  for(const t of turns){const b=loopB(t.a,rho,z-t.z);bz+=b[0];br+=b[1];}
+  return[bz,br];
+}
+// L: self (thin-wire loop) + full Maxwell mutual sum. ~50 turns = 1225 pairs, instant.
+function coilL(turns){
+  let L=0;
+  for(const t of turns)L+=MU0*t.a*(Math.log(8*t.a/t.bare)-1.75);
+  for(let i=0;i<turns.length;i++)for(let j=i+1;j<turns.length;j++){
+    const A=turns[i].a,B=turns[j].a,d=turns[i].z-turns[j].z;
+    const m=4*A*B/((A+B)*(A+B)+d*d),k=Math.sqrt(m),ke=ellipKE(m);
+    L+=2*MU0*Math.sqrt(A*B)*((2/k-k)*ke[0]-(2/k)*ke[1]);
+  }
+  return L;
+}
+function coilR(turns){
+  let R=0;
+  for(const t of turns)R+=2*Math.PI*t.a*AWG[t.awg][1];
+  return R;
+}
+function wireLen(turns){let s=0;for(const t of turns)s+=2*Math.PI*t.a;return s;}
+
+// one drive cycle of the RL loop: ON leg toward V/R, OFF leg = flyback through the diode toward
+// -Vf/R, truncated at the zero crossing. 8 settling cycles, the ninth is recorded.
+function solvePulse(V,L,R,Vf,pwUs,perUs){
+  const tau=L/R,iInf=V/R;
+  const on=Math.min(pwUs,perUs)*1e-6, off=Math.max(perUs-pwUs,0)*1e-6;
+  let i=0,peak=0,sum=0,sum2=0,didtOn=0,didtOff=0;
+  const wave=[];
+  for(let cyc=0;cyc<9;cyc++){
+    const rec=cyc===8;
+    // ON leg
+    let eq=iInf,t=0,steps=80,dt=on/steps;
+    if(rec)didtOn=(V-i*R)/L;
+    for(let s=0;s<steps;s++){
+      const dec=Math.exp(-dt/tau),one=1-dec;
+      if(rec){sum+=eq*dt+(i-eq)*tau*one;sum2+=eq*eq*dt+2*eq*(i-eq)*tau*one+(i-eq)*(i-eq)*(tau/2)*(1-dec*dec);
+        wave.push([t*1e6,i]);}
+      i=eq+(i-eq)*dec;t+=dt;
+    }
+    if(rec){peak=i;didtOff=-(Vf+i*R)/L;wave.push([on*1e6,i]);}
+    // OFF leg: solve the zero crossing so current never integrates below zero
+    eq=-Vf/R;
+    let span=off;
+    if(i>0){const t0=-tau*Math.log(-eq/(i-eq));if(t0>0&&t0<span)span=t0;}
+    steps=80;dt=span>0?span/steps:0;
+    let t2=0;
+    for(let s=0;s<steps&&dt>0;s++){
+      const dec=Math.exp(-dt/tau),one=1-dec;
+      if(rec){sum+=eq*dt+(i-eq)*tau*one;sum2+=eq*eq*dt+2*eq*(i-eq)*tau*one+(i-eq)*(i-eq)*(tau/2)*(1-dec*dec);
+        wave.push([(on+t2)*1e6,Math.max(i,0)]);}
+      i=eq+(i-eq)*dec;t2+=dt;
+    }
+    if(i<0)i=0;
+    if(rec&&span<off)wave.push([(on+span)*1e6+1,0],[perUs,0]);
+  }
+  const per=perUs*1e-6;
+  return{peak,avg:sum/per,rms:Math.sqrt(Math.max(sum2,0)/per),didtOn,didtOff,wave,tau};
+}
+// pulse width that reaches a target current, from I = iInf (1 - e^(-t/tau)); null when unreachable
+function usForAmps(V,L,R,target){
+  const iInf=V/R;if(target>=iInf*0.95)return null;
+  return-(L/R)*Math.log(1-target/iInf)*1e6;
+}
+// everything the Coil tab shows, from geometry + circuit + the active drive
+function coilModel(C,hz,pwUs){
+  const turns=buildTurns(C);
+  const Lest=coilL(turns),Rest=coilR(turns);
+  const L=(C.luh>0?C.luh*1e-6:Lest);
+  const R=Math.max(((C.rm>0?C.rm:Rest*1000)+C.rds)/1000,1e-4);
+  const per=hz>0.05?Math.max(1e6/hz,4000):1e6;
+  const p=solvePulse(C.v,L,R,C.vf,Math.min(pwUs,per),per);
+  const edge=Math.max(Math.abs(p.didtOn),Math.abs(p.didtOff));
+  const face=coilBperA(turns,0,0)[0];                        // T per A, axis at the face plane
+  const depth=coilBperA(turns,0,-C.depth/100)[0];
+  const outer=coilOuterR(C);
+  const perim=coilBperA(turns,outer,-C.gap/1000)[0];
+  const sensC=coilBperA(turns,0,-C.gap/1000)[0];
+  const rho=Math.min(outer,0.9*outer);
+  return{turns,Lest,Rest,L,R,per,pulse:p,edge,
+    bFace:face*p.peak,bDepth:depth*p.peak,bAvgFace:face*p.avg,
+    dbFace:face*edge,dbDepth:depth*edge,
+    eDepth:(rho/2)*depth*edge,                               // induced E at the coil rim radius, at depth
+    emfDepth:Math.PI*rho*rho*depth*edge,
+    energy:0.5*L*p.peak*p.peak,
+    pCoil:p.rms*p.rms*(C.rm>0?C.rm:Rest*1000)/1000,
+    wireM:wireLen(turns),outer,facePerA:face,depthPerA:depth,perimPerA:perim,sensCPerA:sensC};
+}
+function skinDepth(hz,sigma){return hz>0?Math.sqrt(2/(2*Math.PI*hz*MU0*(sigma||0.2))):Infinity;}
+/* ================= canvas charts =================
+   One tiny renderer: DPR-aware, nice 1/2/5 ticks, smoothed autoscale (an unsmoothed autoscale
+   makes a steady signal look unsteady), min/max band support so pulse edges survive decimation. */
+const CHS=new Map();
+function chGet(cv){let c=CHS.get(cv);if(!c){c={y0:0,y1:1};CHS.set(cv,c);}return c;}
+function niceStep(span){const raw=span/5,p=Math.pow(10,Math.floor(Math.log10(raw||1)));
+  for(const m of[1,2,5,10])if(raw<=m*p)return m*p;return 10*p;}
+function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function drawChart(cv,opt){
+  const dpr=Math.min(devicePixelRatio||1,2),W=cv.clientWidth,H=cv.clientHeight;
+  if(!W||!H)return;
+  if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+  const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
+  const padL=44,padR=8,padT=10,padB=18,iw=W-padL-padR,ih=H-padT-padB;
+  const ink=cssVar('--ink'),mut=cssVar('--mut'),line=cssVar('--line');
+  // y range over every series (and bands)
+  let lo=Infinity,hi=-Infinity;
+  for(const s of opt.series||[]){
+    const ys=s.ys||[];for(let i=0;i<ys.length;i++){const v=ys[i];if(Number.isFinite(v)){if(v<lo)lo=v;if(v>hi)hi=v;}}
+    if(s.ys2)for(const v of s.ys2){if(Number.isFinite(v)){if(v<lo)lo=v;if(v>hi)hi=v;}}
+  }
+  if(opt.hline!==undefined&&Number.isFinite(opt.hline)){if(opt.hline<lo)lo=opt.hline;if(opt.hline>hi)hi=opt.hline;}
+  if(!(hi>lo)){lo=0;hi=1;}
+  if(opt.zero&&lo>0)lo=0;
+  const span=(hi-lo)||1;lo-=span*0.07;hi+=span*0.07;
+  const st=chGet(cv);
+  if(opt.noSmooth||!Number.isFinite(st.y0)){st.y0=lo;st.y1=hi;}
+  else{st.y0+=(lo-st.y0)*0.25;st.y1+=(hi-st.y1)*0.25;}
+  const y0=st.y0,y1=st.y1;
+  const X=i=>padL+iw*(opt.n>1?i/(opt.n-1):0);
+  const Y=v=>padT+ih*(1-(v-y0)/(y1-y0||1));
+  // grid + y labels
+  g.font='10px -apple-system,system-ui';g.fillStyle=mut;g.strokeStyle=line;g.lineWidth=1;
+  const stepY=niceStep(y1-y0);
+  for(let v=Math.ceil(y0/stepY)*stepY;v<=y1;v+=stepY){
+    const y=Y(v);g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();
+    g.fillText(fmtTick(v),3,y+3);}
+  // x labels
+  if(opt.x0!==undefined&&opt.x1!==undefined){
+    const stepX=niceStep(opt.x1-opt.x0);
+    g.textAlign='center';
+    for(let v=Math.ceil(opt.x0/stepX)*stepX;v<=opt.x1;v+=stepX){
+      const x=padL+iw*((v-opt.x0)/(opt.x1-opt.x0||1));
+      g.beginPath();g.moveTo(x,padT);g.lineTo(x,H-padB);g.strokeStyle=line;g.stroke();
+      g.fillText(fmtTick(v)+(opt.xu||''),x,H-5);}
+    g.textAlign='left';
+  }
+  // zero line
+  if(y0<0&&y1>0){g.strokeStyle=mut;g.globalAlpha=.5;g.beginPath();g.moveTo(padL,Y(0));g.lineTo(W-padR,Y(0));g.stroke();g.globalAlpha=1;}
+  // threshold line
+  if(opt.hline!==undefined&&Number.isFinite(opt.hline)){
+    g.strokeStyle=cssVar('--bad');g.setLineDash([5,4]);g.beginPath();g.moveTo(padL,Y(opt.hline));g.lineTo(W-padR,Y(opt.hline));g.stroke();g.setLineDash([]);}
+  for(const s of opt.series||[]){
+    const col=s.color||cssVar('--acc');
+    if(s.ys2){                      // band: ys = min, ys2 = max
+      g.fillStyle=col;g.globalAlpha=.35;g.beginPath();
+      for(let i=0;i<opt.n;i++){const y=Y(s.ys[i]);i?g.lineTo(X(i),y):g.moveTo(X(i),y);}
+      for(let i=opt.n-1;i>=0;i--)g.lineTo(X(i),Y(s.ys2[i]));
+      g.closePath();g.fill();g.globalAlpha=1;
+      g.strokeStyle=col;g.lineWidth=1.2;g.beginPath();
+      for(let i=0;i<opt.n;i++){const m=(s.ys[i]+s.ys2[i])/2,y=Y(m);i?g.lineTo(X(i),y):g.moveTo(X(i),y);}
+      g.stroke();
+      continue;
+    }
+    g.strokeStyle=col;g.lineWidth=s.width||1.6;
+    if(s.dash)g.setLineDash(s.dash);
+    g.beginPath();
+    let pen=false;
+    for(let i=0;i<opt.n;i++){const v=s.ys[i];
+      if(!Number.isFinite(v)){pen=false;continue;}
+      const x=X(i),y=Y(v);
+      pen?g.lineTo(x,y):g.moveTo(x,y);pen=true;}
+    g.stroke();g.setLineDash([]);
+    if(s.fill){g.lineTo(X(opt.n-1),Y(Math.max(y0,0)));g.lineTo(X(0),Y(Math.max(y0,0)));g.closePath();
+      g.fillStyle=col;g.globalAlpha=.12;g.fill();g.globalAlpha=1;}
+  }
+  // marker: vertical line at fraction fx
+  if(opt.marker!==undefined&&opt.marker>=0&&opt.marker<=1){
+    g.strokeStyle=cssVar('--warn');g.setLineDash([3,3]);
+    const x=padL+iw*opt.marker;g.beginPath();g.moveTo(x,padT);g.lineTo(x,H-padB);g.stroke();g.setLineDash([]);}
+  g.fillStyle=ink;
+}
+function fmtTick(v){const a=Math.abs(v);
+  if(a>=1e6)return(v/1e6).toFixed(1)+'M';if(a>=10000)return(v/1000).toFixed(0)+'k';
+  if(a>=1000)return(v/1000).toFixed(1)+'k';if(a>=100)return v.toFixed(0);
+  if(a>=1)return(''+Math.round(v*100)/100);if(a===0)return'0';return v.toPrecision(2);}
+
+/* ================= device state + clock ================= */
+let ST=null;                             // last /api/state
+let clockBase={t:0,at:0,run:false,total:0};
+const unitF=()=>load('mg-unit','F')==='F';
+const degOut=f=>unitF()?f:(f-32)*5/9;
+const degIn=v=>unitF()?v:v*9/5+32;
+const degSym=()=>unitF()?'°F':'°C';
+
+function planWindows(run,ui){
+  const stages=[];
+  if(ui.stagesOn){for(let i=0;i<5;i++)if(run.stages[i].on)stages.push({i,s:run.stages[i]});}
+  else stages.push({i:0,s:Object.assign({},run.stages[0],{sec:ui.timerMin>0?ui.timerMin*60:0})});
+  const wins=[];let t=0,open=false;
+  const rep=ui.stagesOn&&run.rFrom>=0&&run.rTo>=run.rFrom&&run.rN>1;
+  const pk=stages.map(x=>x.i);
+  const from=rep?pk.indexOf(run.rFrom):-1,to=rep?pk.indexOf(run.rTo):-1;
+  const span=from>=0&&to>=from;
+  for(let i=0;i<stages.length&&!open;i++){
+    if(span&&i===from){
+      for(let r=0;r<run.rN&&!open;r++)for(let j=from;j<=to&&!open;j++){
+        const len=stages[j].s.sec;wins.push({st:stages[j].i,start:t,len});
+        if(len<=0)open=true;else t+=len;}
+      i=to;continue;}
+    if(span&&i>from&&i<=to)continue;
+    const len=stages[i].s.sec;wins.push({st:stages[i].i,start:t,len});
+    if(len<=0)open=true;else t+=len;
+  }
+  return{wins,total:open?0:t};
+}
+
+function stTrip(code){return['','Coil temperature limit','MOSFET temperature limit','Coil heating too fast',
+  'MOSFET heating too fast','Drive pin stuck on','Thermistor stopped answering'][code]||'Safety stop';}
+
+function renderState(){
+  const s=ST;
+  const name=s?s.s:'idle';
+  const el=$('#stName');
+  el.textContent={idle:'READY',run:'RUNNING',pause:'PAUSED',done:'FINISHED',trip:'SAFETY STOP'}[name]||name;
+  el.className='state '+name;
+  // local clock between polls
+  let t=clockBase.t;
+  if(clockBase.run)t+=(Date.now()-clockBase.at)/1000;
+  if(clockBase.total>0)t=Math.min(t,clockBase.total);
+  const rem=clockBase.total>0?clockBase.total-t:0;
+  $('#clock').innerHTML=clockBase.total>0
+    ?fmtSec(rem)+'<small> left</small>'
+    :fmtSec(t);
+  $('#clockSub').textContent=s?(clockBase.total>0?fmtSec(t)+' of '+fmtSec(clockBase.total):
+    (name==='run'?'open treatment':'ready'))+(s.hz>0&&name==='run'?' · '+fmtHzV(s.hz)+' Hz · '+fmtUs(s.pw):''):'connect to the device';
+  // stage bar
+  const pw=planWindows(cfg.run,cfg.ui),bar=$('#stageBar');
+  if(bar.childElementCount!==pw.wins.length){bar.innerHTML=pw.wins.map(()=>'<i><b></b></i>').join('');}
+  pw.wins.forEach((w,i)=>{
+    const seg=bar.children[i],fill=seg.firstChild;
+    const stage=cfg.run.stages[w.st];
+    fill.style.background=stage.col;
+    let f=0;
+    if(w.len<=0)f=t>w.start?1:0;
+    else f=clamp((t-w.start)/w.len,0,1);
+    fill.style.width=(f*100)+'%';
+  });
+  const wi=pw.wins.findIndex(w=>w.len<=0?t>=w.start:(t<w.start+w.len));
+  const cw=wi>=0?pw.wins[wi]:pw.wins[pw.wins.length-1];
+  $('#stageTxt').textContent=cfg.ui.stagesOn&&cw?('Stage '+(cw.st+1)+(pw.wins.length>1?' · window '+((wi<0?pw.wins.length:wi+1))+'/'+pw.wins.length:'')):'';
+  // buttons
+  const idle=name==='idle',run=name==='run',pause=name==='pause',done=name==='done',trip=name==='trip';
+  $('#btnStart').classList.toggle('hide',run||trip);
+  $('#btnStart').textContent=pause?'Resume':'Start';
+  $('#btnPause').classList.toggle('hide',!run);
+  $('#btnStop').classList.toggle('hide',!(run||pause||done));
+  $('#btnResetT').classList.toggle('hide',!(run||pause));
+  $('#btnTripReset').classList.toggle('hide',!trip);
+  const tb=$('#tripBox');
+  if(trip&&s){tb.classList.remove('hide');
+    tb.innerHTML='<b>'+stTrip(s.trip)+'.</b> The coil is off and stays off until the stop is reset.'+
+      (s.trip>=1&&s.trip<=4?' Let it cool: the reset only takes once a fresh reading is back under the limit.':'');}
+  else tb.classList.add('hide');
+  $('#probeNote').classList.toggle('hide',!(s&&idle&&cfg.safe.on&&cfg.safe.needProbe&&(!s.okc||!s.okf)));
+  // live tiles
+  if(s){
+    const b0=fmtUT(s.b0);$('#lvB0').innerHTML=b0[0]+'<small>'+b0[1]+'</small>';
+    $('#lvB0s').textContent='perim '+fmtUT(s.b1)[0]+' '+fmtUT(s.b1)[1];
+    $('#lvDb').innerHTML=fmt(s.dbm,s.dbm>=100?0:1)+'<small>mT/s</small>';
+    const M=coilModelCached();
+    const ratio=M&&M.sensCPerA>0?M.depthPerA/M.sensCPerA:0;
+    const bd=fmtUT(s.bm0*ratio);
+    $('#lvBd').innerHTML=ratio?bd[0]+'<small>'+bd[1]+'</small>':'—';
+    $('#lvBdS').textContent='peak at '+fmt(cfg.coil.depth,1)+' cm';
+    $('#lvF').innerHTML=s.f>0?fmtHzV(s.f)+'<small>Hz</small>':'—';
+    $('#lvFs').textContent=s.f>0?'FFT · SNR '+fmt(s.snr,0):'no tone found';
+    tempTile($('#tileTc'),$('#lvTc'),$('#lvTcS'),s.tc,s.okc,s.dc,cfg.safe.coilMax);
+    tempTile($('#tileTf'),$('#lvTf'),$('#lvTfS'),s.tf,s.okf,s.dfr,cfg.safe.fetMax);
+  }
+  renderMeasure&&renderMeasure();
+}
+function tempTile(tile,v,sub,tF,ok,rate,limF){
+  if(!ok){v.textContent='—';sub.textContent='no probe';tile.className='tile';return;}
+  v.innerHTML=fmt(degOut(tF),1)+'<small>'+degSym()+'</small>';
+  sub.textContent=(rate>=0?'+':'')+fmt(unitF()?rate:rate*5/9,1)+degSym()+'/min';
+  tile.className='tile'+(tF>limF?' hot':(tF>limF-8?' warm':''));
+}
+
+let pollTimer=0;
+async function pollNow(){
+  clearTimeout(pollTimer);
+  if(DEV.on){
+    const s=await apiQuiet('/api/state');
+    if(s){
+      const was=ST;ST=s;
+      clockBase={t:s.t,at:Date.now(),run:s.s==='run',total:s.total};
+      if(s.rev&&cfgRev&&s.rev!==cfgRev&&!cfgPushing){cfgRev=s.rev;cfgPull();}
+      else if(s.rev&&!cfgRev)cfgRev=s.rev;
+      if(!was||was.s!==s.s)renderPresets();
+    }
+  }else if(!ONDEV){connectNow();}
+  renderState();
+  pollTimer=setTimeout(pollNow,document.hidden?2500:400);
+}
+setInterval(()=>{if(clockBase.run)renderState();},500);
+
+/* ================= commands ================= */
+async function cmd(c,args){
+  let q='/api/cmd?c='+c;
+  for(const k in args||{})q+='&'+k+'='+encodeURIComponent(args[k]);
+  try{const s=await api(q,{method:'POST'});
+    if(s&&s.app){ST=s;clockBase={t:s.t,at:Date.now(),run:s.s==='run',total:s.total};renderState();}
+    return s;
+  }catch(e){
+    if(e.message==='probe')$('#probeNote').classList.remove('hide');
+    if(e.message==='cool')$('#tripBox').innerHTML='<b>Still warm.</b> The reset takes once a fresh reading is at or below the limit.';
+    return null;
+  }
+}
+$('#btnStart').onclick=async()=>{
+  if(!DEV.on)return;
+  await api('/api/config',{method:'POST',body:JSON.stringify(cfg)}).then(r=>{if(r&&r.rev)cfgRev=r.rev;}).catch(()=>{});
+  cmd('start');
+};
+$('#btnPause').onclick=()=>cmd('pause');
+$('#btnStop').onclick=()=>twoTap($('#btnStop'),()=>cmd('stop'),'End treatment?');
+$('#btnResetT').onclick=()=>twoTap($('#btnResetT'),()=>cmd('resettime'),'Restart the clock?');
+$('#btnTripReset').onclick=()=>cmd('tripreset');
+
+/* ================= vertical sliders ================= */
+function vslider(el,o){
+  const track=el.querySelector('.vtrack'),fill=el.querySelector('.fill'),th=el.querySelector('.th'),
+    ceil=el.querySelector('.ceil'),valEl=el.querySelector('.val span'),lockb=el.querySelector('.lockb'),
+    maxIn=el.querySelector('.maxrow input');
+  let dragging=false,dragUntil=0;
+  function range(){return o.range();}
+  function frac(v){const r=range();return o.log?
+    clamp(Math.log(Math.max(v,r.min)/r.min)/Math.log(r.max/r.min),0,1):
+    clamp((v-r.min)/(r.max-r.min),0,1);}
+  function unfrac(f){const r=range();return o.log?r.min*Math.pow(r.max/r.min,f):r.min+(r.max-r.min)*f;}
+  function paint(){
+    const v=o.get(),f=frac(v);
+    fill.style.height=(f*100)+'%';
+    th.style.bottom=(f*100)+'%';
+    valEl.textContent=o.fmt(v);
+    el.classList.toggle('locked',o.locked());
+    lockb.textContent=o.locked()?'🔒':'🔓';
+    const mx=o.ceiling();
+    if(mx>0){ceil.classList.remove('hide');ceil.style.bottom=(frac(mx)*100)+'%';ceil.style.top='auto';}
+    else ceil.classList.add('hide');
+    if(maxIn!==document.activeElement)maxIn.value=mx>0?o.ceilFmt(mx):'';
+    maxIn.disabled=!coilIsOff();
+    el.querySelector('.duty')&&(el.querySelector('.duty').textContent='');
+  }
+  function fromEvent(ev){
+    const r=track.getBoundingClientRect();
+    const y=(ev.touches?ev.touches[0].clientY:ev.clientY);
+    let f=clamp(1-(y-r.top)/r.height,0,1);
+    let v=o.snap(unfrac(f));
+    const mx=o.ceiling();
+    if(mx>0&&v>mx)v=mx;
+    o.set(v);paint();
+  }
+  track.addEventListener('pointerdown',ev=>{
+    if(o.locked())return;
+    dragging=true;track.setPointerCapture(ev.pointerId);fromEvent(ev);ev.preventDefault();});
+  track.addEventListener('pointermove',ev=>{if(dragging)fromEvent(ev);});
+  const up=()=>{if(dragging){dragging=false;dragUntil=Date.now()+700;o.commit();}};
+  track.addEventListener('pointerup',up);track.addEventListener('pointercancel',up);
+  el.querySelectorAll('.step button').forEach(b=>b.onclick=()=>{
+    if(o.locked())return;
+    let v=o.snap(o.get()+o.stepBy(o.get())*Number(b.dataset.d));
+    const mx=o.ceiling();if(mx>0&&v>mx)v=mx;
+    o.set(v);o.commit();paint();});
+  lockb.onclick=()=>{o.setLock(!o.locked());paint();};
+  maxIn.addEventListener('change',()=>{
+    if(!coilIsOff())return;
+    const v=parseFloat(maxIn.value);
+    o.setCeiling(Number.isFinite(v)&&v>0?v:0);paint();});
+  return{paint,busy:()=>dragging||Date.now()<dragUntil};
+}
+function coilIsOff(){return!ST||ST.s==='idle'||ST.s==='done'||ST.s==='trip';}
+const tuneSend=debounce(()=>{if(ST&&ST.s==='run')cmd('tune',{hz:curHz(),pw:curPw()});},160);
+function curHz(){return cfg.run.stages[liveStage()].hz;}
+function curPw(){return cfg.run.stages[liveStage()].pw;}
+function liveStage(){
+  if(ST&&ST.s==='run'&&ST.stage>=0&&cfg.ui.stagesOn)return clamp(ST.stage,0,4);
+  return 0;
+}
+const VSH=vslider($('#vsHz'),{
+  range:()=>({min:0,max:cfg.max.hz>0?cfg.max.hz:250}),log:false,
+  get:curHz,set:v=>{cfg.run.stages[liveStage()].hz=v;},
+  snap:v=>clamp(Math.round(v*10)/10,0,250),
+  stepBy:v=>v>=100?1:0.1,
+  fmt:v=>fmtHzV(v),ceilFmt:v=>fmtHzV(v),
+  locked:()=>cfg.ui.lockHz,setLock:v=>{cfg.ui.lockHz=v;touch();},
+  ceiling:()=>cfg.max.hz,setCeiling:v=>{cfg.max.hz=clamp(v,0,250);
+    if(v>0)for(const s of cfg.run.stages)s.hz=Math.min(s.hz,v);touch();fillStages();},
+  commit:()=>{touch();tuneSend();dutyPaint();}
+});
+const VSP=vslider($('#vsPw'),{
+  range:()=>{
+    const hz=curHz(),per=hz>0.05?1e6/hz:500000;
+    return{min:1,max:Math.min(cfg.max.pw>0?cfg.max.pw:per,per,500000)};},
+  log:true,
+  get:curPw,set:v=>{cfg.run.stages[liveStage()].pw=v;},
+  snap:v=>clamp(Math.round(v),1,500000),
+  stepBy:v=>v>=20000?1000:v>=2000?100:v>=200?10:1,
+  fmt:v=>v>=10000?fmt(v/1000,1):String(Math.round(v)),ceilFmt:v=>String(Math.round(v)),
+  locked:()=>cfg.ui.lockPw,setLock:v=>{cfg.ui.lockPw=v;touch();},
+  ceiling:()=>cfg.max.pw,setCeiling:v=>{cfg.max.pw=clamp(v,0,500000);
+    if(v>0)for(const s of cfg.run.stages)s.pw=Math.min(s.pw,v);touch();fillStages();},
+  commit:()=>{touch();tuneSend();dutyPaint();}
+});
+function pwUnitPaint(){const v=curPw();$('#vsPw .val small').textContent=v>=10000?' ms':' µs';}
+function dutyPaint(){
+  const hz=curHz(),pw=curPw();
+  const per=hz>0.05?1e6/hz:0;
+  const d=per?clamp(pw/per,0,1)*100:0;
+  $('#dutyTop').textContent=hz>0.05?('duty '+(d>=1?fmt(d,1):d>=0.01?fmt(d,3):fmt(d,5))+'% · period '+fmtUs(per)):'coil parked (0 Hz)';
+  pwUnitPaint();
+}
+function slidersPaint(){if(!VSH.busy())VSH.paint();if(!VSP.busy())VSP.paint();dutyPaint();}
+
+/* ================= timer + stages ================= */
+function fillTimer(){
+  $$('#timerChips .chip').forEach(ch=>{
+    const m=Number(ch.dataset.min);
+    ch.classList.toggle('on',m===-1?![0,10,15,20,30,45,60].includes(cfg.ui.timerMin):cfg.ui.timerMin===m);});
+  $('#customRow').classList.toggle('hide',[0,10,15,20,30,45,60].includes(cfg.ui.timerMin));
+  if(![0,10,15,20,30,45,60].includes(cfg.ui.timerMin))$('#customMin').value=cfg.ui.timerMin;
+  $('#timerChips').parentElement.classList.toggle('hide',cfg.ui.stagesOn);
+}
+$('#timerChips').addEventListener('click',e=>{
+  const ch=e.target.closest('.chip');if(!ch)return;
+  const m=Number(ch.dataset.min);
+  cfg.ui.timerMin=m===-1?Number($('#customMin').value)||25:m;
+  if(!cfg.ui.stagesOn)cfg.run.stages[0].sec=cfg.ui.timerMin*60;
+  fillTimer();touch();});
+$('#customMin').addEventListener('change',()=>{
+  cfg.ui.timerMin=clamp(Number($('#customMin').value)||25,1,360);
+  if(!cfg.ui.stagesOn)cfg.run.stages[0].sec=cfg.ui.timerMin*60;
+  fillTimer();touch();});
+$('#stagesOn').addEventListener('change',()=>{
+  cfg.ui.stagesOn=$('#stagesOn').checked;
+  $('#stagesBody').classList.toggle('hide',!cfg.ui.stagesOn);
+  $('#stagesOffNote').classList.toggle('hide',cfg.ui.stagesOn);
+  if(!cfg.ui.stagesOn)cfg.run.stages[0].sec=cfg.ui.timerMin*60;
+  fillTimer();touch();slidersPaint();});
+
+function mmss(sec){const m=Math.floor(sec/60),s=Math.round(sec%60);return m+':'+String(s).padStart(2,'0');}
+function parseMmss(t){const m=String(t).trim().match(/^(\d+)(?::([0-5]?\d))?$/);
+  return m?Number(m[1])*60+(m[2]?Number(m[2]):0):null;}
+function fillStages(){
+  const host=$('#stageRows');
+  if(!host.childElementCount){
+    let h='';
+    for(let i=0;i<5;i++){
+      h+='<div class="stg" data-i="'+i+'">'+
+        '<label class="flex" style="justify-content:center"><input type="checkbox" class="onbox"></label>'+
+        '<input class="num" type="number" min="0" max="250" step="0.1" data-k="hz">'+
+        '<input class="num" type="number" min="1" step="1" data-k="pw">'+
+        '<input class="num" type="text" inputmode="numeric" data-k="sec" placeholder="open">'+
+        '<input type="color" data-k="col">'+
+      '</div>';
+    }
+    host.innerHTML=h;
+    host.addEventListener('change',e=>{
+      const row=e.target.closest('.stg');if(!row)return;
+      const i=Number(row.dataset.i),s=cfg.run.stages[i];
+      if(e.target.classList.contains('onbox')){s.on=e.target.checked;if(i===0&&!s.on)s.on=true,e.target.checked=true;}
+      else{const k=e.target.dataset.k;
+        if(k==='hz')s.hz=clamp(Math.round((Number(e.target.value)||0)*10)/10,0,250);
+        else if(k==='pw')s.pw=clamp(Math.round(Number(e.target.value)||1),1,500000);
+        else if(k==='sec'){const v=parseMmss(e.target.value);s.sec=v===null?0:clamp(v,0,21600);}
+        else if(k==='col')s.col=e.target.value;}
+      if(cfg.max.hz>0)s.hz=Math.min(s.hz,cfg.max.hz);
+      if(cfg.max.pw>0)s.pw=Math.min(s.pw,cfg.max.pw);
+      fillStages();touch();slidersPaint();});
+  }
+  for(let i=0;i<5;i++){
+    const row=host.children[i],s=cfg.run.stages[i];
+    row.classList.toggle('offrow',!s.on);
+    row.querySelector('.onbox').checked=s.on;
+    const set=(k,v)=>{const el=row.querySelector('[data-k='+k+']');if(el!==document.activeElement)el.value=v;};
+    set('hz',s.hz);set('pw',s.pw);set('sec',s.sec>0?mmss(s.sec):'');set('col',s.col);
+    row.querySelector('.n')||row.firstChild.insertAdjacentHTML('beforebegin','');
+  }
+  // repeat selects
+  const en=[];for(let i=0;i<5;i++)if(cfg.run.stages[i].on)en.push(i);
+  const mkOpts=(sel,vals,cur,none)=>{
+    sel.innerHTML=(none?'<option value="-1">'+none+'</option>':'')+
+      vals.map(v=>'<option value="'+v+'">'+(typeof v==='number'&&none?('stage '+(v+1)):v)+'</option>').join('');
+    sel.value=String(cur);if(sel.selectedIndex<0)sel.selectedIndex=0;};
+  mkOpts($('#repFrom'),en,cfg.run.rFrom,'off');
+  mkOpts($('#repTo'),en,cfg.run.rTo,'—');
+  mkOpts($('#repN'),[2,3,4,5,6,7,8,9,10],cfg.run.rN>1?cfg.run.rN:2);
+  renderPlanInfo();
+}
+for(const id of['repFrom','repTo','repN'])$('#'+id).addEventListener('change',()=>{
+  cfg.run.rFrom=Number($('#repFrom').value);
+  cfg.run.rTo=Number($('#repTo').value);
+  cfg.run.rN=Number($('#repN').value)||2;
+  if(cfg.run.rFrom<0)cfg.run.rTo=-1;
+  renderPlanInfo();touch();});
+function renderPlanInfo(){
+  const p=planWindows(cfg.run,cfg.ui);
+  $('#planTotal').textContent=p.total>0?fmtSec(p.total):'open-ended';
+}
+
+/* ================= setups (presets) ================= */
+const PRESET_SKIP=['pins','safe'];
+let PRE={list:[],activeId:load('mg-preset-active',null)};
+const presetCfg=c=>{const o=JSON.parse(JSON.stringify(c));for(const k of PRESET_SKIP)delete o[k];return o;};
+const presetKey=c=>JSON.stringify(presetCfg(normalize(c)));
+async function presetsLoad(){
+  if(DEV.on){const r=await apiQuiet('/api/presets');if(Array.isArray(r))PRE.list=r;}
+  else PRE.list=load('mg-presets',[]);
+  renderPresets();
+}
+const presetsStore=debounce(async()=>{
+  const body=JSON.stringify(PRE.list);
+  store('mg-presets',PRE.list);
+  if(DEV.on)await apiQuiet('/api/presets',{method:'POST',body});
+},300);
+$('#preSave').onclick=()=>{
+  const name=$('#preName').value.trim();
+  if(!name){
+    const cur=PRE.list.find(p=>p.id===PRE.activeId);
+    if(cur){cur.cfg=presetCfg(cfg);presetsStore();renderPresets();}
+    return;}
+  if(PRE.list.length>=20)return;
+  const id='p'+Date.now().toString(36);
+  PRE.list.push({id,name:name.slice(0,24),cfg:presetCfg(cfg)});
+  PRE.activeId=id;store('mg-preset-active',id);
+  $('#preName').value='';
+  presetsStore();renderPresets();};
+function presetLoadInto(p){
+  const keep={pins:cfg.pins,safe:cfg.safe};
+  cfg=normalize(Object.assign({},cfg,p.cfg,keep));
+  PRE.activeId=p.id;store('mg-preset-active',p.id);
+  fillAll();touch();}
+function renderPresets(){
+  const host=$('#preList');
+  if(!host)return;
+  const dirty=PRE.activeId&&(()=>{const c=PRE.list.find(p=>p.id===PRE.activeId);
+    return c&&presetKey(c.cfg)!==presetKey(cfg);})();
+  $('#preHint').classList.toggle('hide',!dirty);
+  if(dirty)$('#preHint').textContent='Edited since load - Save with the name empty to overwrite “'+
+    (PRE.list.find(p=>p.id===PRE.activeId)||{}).name+'”.';
+  host.innerHTML='';
+  for(const p of PRE.list){
+    const row=document.createElement('div');
+    row.className='pre'+(p.id===PRE.activeId?' cur':'');
+    const pw=planWindows(normalize(p.cfg).run,normalize(p.cfg).ui||{stagesOn:false,timerMin:30});
+    const st0=(p.cfg.run&&p.cfg.run.stages&&p.cfg.run.stages[0])||{hz:'?',pw:'?'};
+    row.innerHTML='<div class="nm"><b></b><span>'+fmtHzV(st0.hz)+' Hz · '+fmtUs(st0.pw)+' · '+
+      (pw.total>0?fmtSec(pw.total):'open')+(p.id===PRE.activeId&&dirty?' · edited':'')+'</span></div>'+
+      '<button class="ib" data-a="upd" title="Overwrite with current">💾</button>'+
+      '<button class="ib" data-a="ren" title="Rename">✏️</button>'+
+      '<button class="ib" data-a="del" title="Delete">🗑</button>';
+    row.querySelector('b').textContent=p.name;
+    row.onclick=e=>{
+      const a=e.target.dataset&&e.target.dataset.a;
+      if(a==='del'){twoTap(e.target,()=>{PRE.list=PRE.list.filter(x=>x.id!==p.id);
+        if(PRE.activeId===p.id)PRE.activeId=null;presetsStore();renderPresets();},'🗑?');return;}
+      if(a==='upd'){twoTap(e.target,()=>{p.cfg=presetCfg(cfg);presetsStore();renderPresets();},'💾?');return;}
+      if(a==='ren'){const b=row.querySelector('b');
+        const inp=document.createElement('input');inp.className='txt';inp.value=p.name;inp.maxLength=24;
+        b.replaceWith(inp);inp.focus();inp.select();
+        const fin=ok=>{if(ok&&inp.value.trim())p.name=inp.value.trim();presetsStore();renderPresets();};
+        inp.onkeydown=ev=>{if(ev.key==='Enter')fin(true);if(ev.key==='Escape')fin(false);};
+        inp.onblur=()=>fin(true);
+        return;}
+      if(ST&&ST.s==='run'){twoTap(row.querySelector('.nm b')||row,()=>presetLoadInto(p),'Replace the running treatment?');return;}
+      presetLoadInto(p);
+    };
+    host.appendChild(row);
+  }
+  if(!PRE.list.length)host.innerHTML='<div class="small mut" style="padding:8px 2px">Nothing saved yet. A setup keeps the whole treatment: stages, sliders, ceilings, coil geometry and LED choices.</div>';
+}
+/* ================= coil tab ================= */
+let MCACHE={key:'',m:null};
+function coilModelCached(){
+  const hz=curHz()||10,pw=curPw()||100;
+  const key=JSON.stringify(cfg.coil)+'|'+hz+'|'+pw;
+  if(MCACHE.key!==key){
+    try{MCACHE={key,m:coilModel(cfg.coil,hz,pw)};}catch(e){MCACHE={key,m:null};}
+  }
+  return MCACHE.m;
+}
+function fillCoilInputs(){
+  const C=cfg.coil;
+  for(const sel of['c_l1awg','c_l2awg']){
+    const el=$('#'+sel);
+    if(!el.childElementCount)el.innerHTML=AWGS.map(a=>'<option value="'+a+'">AWG '+a+' ('+AWG[a][0]+' mm)</option>').join('');
+  }
+  const set=(id,v)=>{const el=$('#'+id);if(el!==document.activeElement)el.value=v;};
+  set('c_l1t',C.l1t);set('c_l1awg',C.l1awg);set('c_l2t',C.l2t);set('c_l2awg',C.l2awg);
+  set('c_rin',C.rin);set('c_ins',C.ins);set('c_v',C.v);set('c_luh',C.luh);set('c_rm',C.rm);
+  set('c_rds',C.rds);set('c_vf',C.vf);
+  $('#c_washer').checked=C.washer;
+  $('#depthSlider').value=C.depth;$('#depthVal').textContent=fmt(C.depth,1)+' cm';
+}
+const COIL_KEYS={c_l1t:['l1t',1,200,1],c_l2t:['l2t',0,200,1],c_rin:['rin',0.1,20,0.1],c_ins:['ins',0,2,0.05],
+  c_v:['v',1,60,0.5],c_luh:['luh',0,100000,0.1],c_rm:['rm',0,100000,1],c_rds:['rds',0,1000,1],c_vf:['vf',0,3,0.05]};
+for(const id in COIL_KEYS)$('#'+id).addEventListener('change',e=>{
+  const[k,lo,hi]=COIL_KEYS[id];
+  cfg.coil[k]=clamp(Number(e.target.value)||0,lo,hi);
+  coilRecalc();touch();});
+$('#c_l1awg').addEventListener('change',e=>{cfg.coil.l1awg=Number(e.target.value);coilRecalc();touch();});
+$('#c_l2awg').addEventListener('change',e=>{cfg.coil.l2awg=Number(e.target.value);coilRecalc();touch();});
+$('#c_washer').addEventListener('change',e=>{cfg.coil.washer=e.target.checked;coilRecalc();touch();});
+$('#depthSlider').addEventListener('input',e=>{
+  cfg.coil.depth=Number(e.target.value);
+  $('#depthVal').textContent=fmt(cfg.coil.depth,1)+' cm';
+  coilRecalc();});
+$('#depthSlider').addEventListener('change',()=>touch());
+
+function tileHtml(l,v,u,s){return'<div class="tile"><div class="l">'+l+'</div><div class="v mono">'+v+
+  (u?'<small>'+u+'</small>':'')+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>';}
+function coilRecalc(){
+  if(TAB!=='coil'){MCACHE.key='';return;}
+  const C=cfg.coil,M=coilModelCached();
+  if(!M)return;
+  const hz=curHz()||10;
+  $('#coilDrive').textContent='at '+fmtHzV(hz)+' Hz · '+fmtUs(curPw()||100);
+  const bF=fmtUT(M.bFace*1e6),bD=fmtUT(M.bDepth*1e6),bA=fmtUT(M.bAvgFace*1e6);
+  const sd=skinDepth(hz,0.2);
+  $('#coilTiles').innerHTML=
+    tileHtml('L estimate',fmt(M.Lest*1e6,1),'µH',C.luh>0?'using measured '+fmt(C.luh,1):'from geometry')+
+    tileHtml('R estimate',fmt(M.Rest*1000,0),'mΩ',C.rm>0?'using measured '+fmt(C.rm,0):'coil only')+
+    tileHtml('Wire length',fmt(M.wireM,1),'m','outer r '+fmt(M.outer*100,1)+' cm')+
+    tileHtml('Peak current',fmt(M.pulse.peak,M.pulse.peak>=10?1:2),'A','τ '+fmt(M.pulse.tau*1e6,0)+' µs')+
+    tileHtml('Avg / RMS current',fmt(M.pulse.avg,2)+' / '+fmt(M.pulse.rms,2),'A','')+
+    tileHtml('dI/dt on / off',fmt(M.pulse.didtOn/1000,0)+' / '+fmt(Math.abs(M.pulse.didtOff)/1000,0),'kA/s','ideal edges')+
+    tileHtml('|B| face, peak',bF[0],bF[1],'axis, winding plane')+
+    tileHtml('|B| at '+fmt(C.depth,1)+' cm',bD[0],bD[1],'axis')+
+    tileHtml('|B| face, average',bA[0],bA[1],'duty-weighted')+
+    tileHtml('dB/dt face',fmt(M.dbFace*1000,0),'mT/s','switching edge')+
+    tileHtml('dB/dt at depth',fmt(M.dbDepth*1000,0),'mT/s','')+
+    tileHtml('Induced E at depth',fmt(M.eDepth,2),'V/m','at the rim radius')+
+    tileHtml('Loop EMF at depth',fmt(M.emfDepth*1000,1),'mV','coil-size loop')+
+    tileHtml('Pulse energy',fmt(M.energy*1000,1),'mJ','½LI²')+
+    tileHtml('Coil heating',fmt(M.pCoil,2),'W','RMS²·R')+
+    tileHtml('Skin depth, tissue',sd>50?'>50':fmt(sd,1),'m','σ≈0.2 S/m · geometry dominates');
+  coilViz();
+  // axial curve: |B| on axis vs distance below the face, at the peak current
+  const N=90,xs=[],ys=[];
+  for(let i=0;i<N;i++){const z=i/(N-1)*0.15;ys.push(coilBperA(M.turns,0,-z)[0]*M.pulse.peak*1e6);}
+  drawChart($('#chAxial'),{n:N,series:[{ys,color:cssVar('--acc'),fill:true}],x0:0,x1:15,xu:'cm',
+    marker:C.depth/15,zero:true,noSmooth:true});
+  // radial profile at the face plane and at depth
+  const rmax=M.outer*1.35,ys2=[],ys3=[];
+  for(let i=0;i<N;i++){const r=i/(N-1)*rmax;
+    ys2.push(Math.abs(coilBperA(M.turns,r,-Math.max(C.gap,1)/1000)[0])*M.pulse.peak*1e6);
+    ys3.push(Math.abs(coilBperA(M.turns,r,-C.depth/100)[0])*M.pulse.peak*1e6);}
+  drawChart($('#chRadial'),{n:N,series:[{ys:ys2,color:cssVar('--acc')},{ys:ys3,color:cssVar('--acc2'),dash:[5,4]}],
+    x0:0,x1:rmax*100,xu:'cm',zero:true,noSmooth:true});
+  $('#capRadial').textContent='|B| across the face (solid) and at '+fmt(C.depth,1)+' cm (dashed), µT';
+  // one predicted cycle
+  const w=M.pulse.wave,n=w.length,wy=w.map(p=>p[1]);
+  drawChart($('#chPulse'),{n,series:[{ys:wy,color:cssVar('--warn'),fill:true}],
+    x0:0,x1:M.per/1000,xu:'ms',zero:true,noSmooth:true});
+  fillFormulas();
+}
+/* a cross-section with real proportions, plus dimensions */
+function coilViz(){
+  const C=cfg.coil,M=coilModelCached();
+  if(!M)return;
+  const svg=$('#coilViz');
+  const W=560,H=240,cx=W/2;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  const rout=M.outer,rin=C.rin/100;
+  const sc=490/(rout*2);                       // px per meter: the coil fills the width
+  const w1=(AWG[C.l1awg][0]+2*C.ins)/1000,w2=(AWG[C.l2awg][0]+2*C.ins)/1000;
+  const faceY=140;
+  let s='';
+  const mut=cssVar('--mut'),acc=cssVar('--acc'),acc2=cssVar('--acc2'),warn=cssVar('--warn'),line=cssVar('--line2'),bad=cssVar('--bad');
+  // body/face slab
+  s+='<rect x="'+(cx-rout*sc-14)+'" y="'+faceY+'" width="'+(rout*sc*2+28)+'" height="8" rx="3" fill="'+line+'"/>';
+  // washer
+  if(C.washer)s+='<rect x="'+(cx-rin*sc)+'" y="'+(faceY-9)+'" width="'+(rin*sc*2)+'" height="9" fill="'+warn+'" opacity=".8" rx="2"/>';
+  // turns: layer 1 bottom row, layer 2 above
+  const dot=(r,y,d,col)=>{const px=Math.max(d*sc,2.6);
+    return'<circle cx="'+(cx-r*sc)+'" cy="'+y+'" r="'+px/2+'" fill="'+col+'"/>'+
+           '<circle cx="'+(cx+r*sc)+'" cy="'+y+'" r="'+px/2+'" fill="'+col+'"/>';};
+  let y1=faceY-w1*sc/2;
+  for(let i=0;i<C.l1t;i++)s+=dot(rin+(i+0.5)*w1,y1,w1*0.92,acc);
+  let y2=faceY-w1*sc-w2*sc/2;
+  for(let i=0;i<C.l2t;i++)s+=dot(rin+(i+0.5)*w2,y2,w2*0.92,acc2);
+  // sensors: center + perimeter below the face
+  s+='<circle cx="'+cx+'" cy="'+(faceY+14)+'" r="4.5" fill="'+bad+'"/>'+
+     '<text x="'+(cx+8)+'" y="'+(faceY+18)+'" class="dim">49E center</text>';
+  s+='<circle cx="'+(cx+rout*sc)+'" cy="'+(faceY+14)+'" r="4.5" fill="'+bad+'"/>'+
+     '<text x="'+(cx+rout*sc-4)+'" y="'+(faceY+30)+'" class="dim" text-anchor="end">49E perimeter</text>';
+  // coil LED on the rim
+  s+='<circle cx="'+(cx-rout*sc-6)+'" cy="'+(faceY-8)+'" r="4" fill="'+warn+'"/>'+
+     '<text x="'+(cx-rout*sc-2)+'" y="'+(faceY-16)+'" class="dim">LED</text>';
+  // dimension: outer diameter
+  const dimY=faceY+46;
+  s+='<line x1="'+(cx-rout*sc)+'" y1="'+dimY+'" x2="'+(cx+rout*sc)+'" y2="'+dimY+'" stroke="'+mut+'" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>'+
+     '<text x="'+cx+'" y="'+(dimY+14)+'" class="dim" text-anchor="middle">⌀ '+fmt(rout*200,1)+' cm</text>';
+  // dimension: open center
+  s+='<line x1="'+(cx-rin*sc)+'" y1="'+(faceY-28-w1*sc-w2*sc)+'" x2="'+(cx+rin*sc)+'" y2="'+(faceY-28-w1*sc-w2*sc)+'" stroke="'+mut+'" stroke-width="1"/>'+
+     '<text x="'+cx+'" y="'+(faceY-34-w1*sc-w2*sc)+'" class="dim" text-anchor="middle">center ⌀ '+fmt(rin*200,1)+' cm</text>';
+  // depth arrow
+  const dz=Math.min(C.depth/100*sc,86);
+  s+='<line x1="'+cx+'" y1="'+(faceY+8)+'" x2="'+cx+'" y2="'+(faceY+8+dz)+'" stroke="'+acc2+'" stroke-width="1.5" stroke-dasharray="4 3"/>'+
+     '<text x="'+(cx+6)+'" y="'+(faceY+10+dz)+'" class="dim" fill="'+acc2+'">target '+fmt(C.depth,1)+' cm</text>';
+  // legend, top-left so it never collides with the drawing
+  s+='<circle cx="14" cy="14" r="4" fill="'+acc+'"/><text x="24" y="18" class="dim">Layer 1: '+C.l1t+'× AWG '+C.l1awg+'</text>';
+  if(C.l2t>0)s+='<circle cx="14" cy="30" r="4" fill="'+acc2+'"/><text x="24" y="34" class="dim">Layer 2: '+C.l2t+'× AWG '+C.l2awg+'</text>';
+  if(C.washer)s+='<rect x="10" y="42" width="9" height="6" fill="'+warn+'" rx="1"/><text x="24" y="49" class="dim">washer</text>';
+  svg.innerHTML='<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">'+
+    '<path d="M1 1 L7 4 L1 7 z" fill="'+mut+'"/></marker></defs>'+s;
+}
+
+/* formulas, MathML (renders natively in Safari and modern browsers) */
+function fillFormulas(){
+  const host=$('#formulas');
+  if(host.dataset.done)return;
+  host.dataset.done='1';
+  const F=[
+    ['On-axis field of one turn',
+     '<math><mi>B</mi><mo>(</mo><mi>z</mi><mo>)</mo><mo>=</mo><mfrac><mrow><msub><mi>μ</mi><mn>0</mn></msub><mi>I</mi><msup><mi>a</mi><mn>2</mn></msup></mrow><mrow><mn>2</mn><msup><mrow><mo>(</mo><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>z</mi><mn>2</mn></msup><mo>)</mo></mrow><mrow><mn>3</mn><mo>/</mo><mn>2</mn></mrow></msup></mrow></mfrac></math>',
+     'The whole coil is the sum over every turn at its own radius and plane. Off-axis points use the exact loop solution with the complete elliptic integrals K and E.'],
+    ['Drive current (RL step)',
+     '<math><mi>i</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>=</mo><mfrac><mi>V</mi><mi>R</mi></mfrac><mrow><mo>(</mo><mn>1</mn><mo>−</mo><msup><mi>e</mi><mrow><mo>−</mo><mi>t</mi><mo>/</mo><mi>τ</mi></mrow></msup><mo>)</mo></mrow><mo>,</mo><mspace width="0.6em"></mspace><mi>τ</mi><mo>=</mo><mfrac><mi>L</mi><mi>R</mi></mfrac></math>',
+     'During the pulse the current climbs toward V/R; at turn-off it decays through the flyback diode toward −V<sub>f</sub>/R and is clipped at zero.'],
+    ['Switching edges',
+     '<math><msub><mrow><mfrac><mrow><mi>d</mi><mi>I</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac></mrow><mtext>on</mtext></msub><mo>=</mo><mfrac><mrow><mi>V</mi><mo>−</mo><mi>i</mi><mi>R</mi></mrow><mi>L</mi></mfrac><mo>,</mo><mspace width="0.6em"></mspace><msub><mrow><mfrac><mrow><mi>d</mi><mi>I</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac></mrow><mtext>off</mtext></msub><mo>=</mo><mo>−</mo><mfrac><mrow><msub><mi>V</mi><mi>f</mi></msub><mo>+</mo><mi>i</mi><mi>R</mi></mrow><mi>L</mi></mfrac></math>',
+     'dB/dt anywhere is (B per ampere at that point) × dI/dt. These are ideal edges - gate drive and wiring slow the real ones, which is why the hall sensors are the authority.'],
+    ['Induced electric field',
+     '<math><mi>E</mi><mo>=</mo><mfrac><mi>ρ</mi><mn>2</mn></mfrac><mo>·</mo><mfrac><mrow><mi>d</mi><mi>B</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac><mo>,</mo><mspace width="0.6em"></mspace><mtext>EMF</mtext><mo>=</mo><mi>π</mi><msup><mi>ρ</mi><mn>2</mn></msup><mfrac><mrow><mi>d</mi><mi>B</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac></math>',
+     'The field induced around a circle of radius ρ centered on the axis - the quantity tissue actually sees, far more meaningful than a coil-sized loop EMF.'],
+    ['Self and mutual inductance',
+     '<math><msub><mi>L</mi><mtext>self</mtext></msub><mo>=</mo><msub><mi>μ</mi><mn>0</mn></msub><mi>a</mi><mrow><mo>(</mo><mi>ln</mi><mfrac><mrow><mn>8</mn><mi>a</mi></mrow><msub><mi>r</mi><mi>w</mi></msub></mfrac><mo>−</mo><mn>1.75</mn><mo>)</mo></mrow></math>',
+     'Total L sums every turn’s self-inductance plus the Maxwell mutual term for every pair (elliptic integrals again). Enter a measured L to override - the estimate is a cross-check.'],
+    ['Skin depth',
+     '<math><mi>δ</mi><mo>=</mo><msqrt><mfrac><mn>2</mn><mrow><mi>ω</mi><msub><mi>μ</mi><mn>0</mn></msub><mi>σ</mi></mrow></mfrac></msqrt></math>',
+     'For tissue (σ ≈ 0.2 S/m) at these frequencies δ is tens of meters - attenuation with depth is set by coil geometry, not by conduction losses.'],
+    ['Hall conversion',
+     '<math><mi>B</mi><mo>=</mo><mfrac><mrow><mi>V</mi><mo>−</mo><msub><mi>V</mi><mtext>zero</mtext></msub></mrow><mrow><mi>S</mi><mo>·</mo><mi>V</mi><mtext>cc</mtext><mo>/</mo><mn>5</mn></mrow></mfrac></math>',
+     'The 49E is ratiometric: its sensitivity S (mV/G at 5 V) scales with the supply. Zeroing stores V at zero field; Earth’s field and sensor offset live there.'],
+    ['Thermistor',
+     '<math><mfrac><mn>1</mn><mi>T</mi></mfrac><mo>=</mo><mfrac><mn>1</mn><msub><mi>T</mi><mn>0</mn></msub></mfrac><mo>+</mo><mfrac><mn>1</mn><mi>β</mi></mfrac><mi>ln</mi><mfrac><mi>R</mi><msub><mi>R</mi><mn>0</mn></msub></mfrac></math>',
+     'Beta model with T₀ = 25 °C. R comes from the divider against the fixed resistor.'],
+  ];
+  host.innerHTML=F.map(f=>'<div class="formula"><div class="fl">'+f[0]+'</div>'+f[1]+
+    '<div class="small mut mt8">'+f[2]+'</div></div>').join('');
+}
+/* ================= measure tab ================= */
+const SCOPE={ch:0,ms:1000,hold:false,wave:null,fold:null,spec:null,t1:0,t2:0,t3:0};
+$('#scopeSrc').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  SCOPE.ch=Number(b.dataset.ch);
+  $$('#scopeSrc button').forEach(x=>x.classList.toggle('on',x===b));
+  CHS.delete($('#chScope'));});
+$('#scopeSpan').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;
+  SCOPE.ms=Number(b.dataset.ms);
+  $$('#scopeSpan .chip').forEach(x=>x.classList.toggle('on',x===b));
+  CHS.delete($('#chScope'));});
+$('#scopeHold').onclick=()=>{SCOPE.hold=!SCOPE.hold;
+  $('#scopeHold').textContent=SCOPE.hold?'Resume':'Hold';
+  $('#scopeHold').classList.toggle('pri',SCOPE.hold);};
+
+function measureKick(){
+  scopeTick();foldTick();specTick();renderMeasure();
+}
+async function scopeTick(){
+  clearTimeout(SCOPE.t1);
+  if(TAB==='measure'&&DEV.on&&!SCOPE.hold&&!document.hidden){
+    const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
+    if(r&&r.n)SCOPE.wave=r;
+    scopeDraw();
+  }
+  SCOPE.t1=setTimeout(scopeTick,TAB==='measure'?(SCOPE.ms>=3000?600:300):2000);
+}
+function scopeDraw(){
+  const r=SCOPE.wave;
+  if(!r||!r.n)return;
+  drawChart($('#chScope'),{n:r.n,series:[{ys:r.mn,ys2:r.mx,color:SCOPE.ch===2?cssVar('--warn'):cssVar('--acc')}],
+    x0:-r.ms/1000,x1:0,xu:'s',zero:false});
+  $('#scopeCap').textContent=(SCOPE.ch===2?'dB/dt, mT/s':'|B|, µT')+' · '+fmt(r.fs/1000,1)+' kS/s'+(SCOPE.hold?' · held':'');
+}
+async function foldTick(){
+  clearTimeout(SCOPE.t2);
+  if(TAB==='measure'&&DEV.on&&!document.hidden){
+    SCOPE.fold=await apiQuiet('/api/fold');
+    foldDraw();
+  }
+  SCOPE.t2=setTimeout(foldTick,700);
+}
+function foldDraw(){
+  const r=SCOPE.fold,cv=$('#chFold');
+  if(!r||!r.n){
+    drawChart(cv,{n:2,series:[{ys:[0,0],color:cssVar('--line2')}],noSmooth:true});
+    $('#foldCap').textContent='coil off - no pulse to fold';
+    return;}
+  // model overlay: the RL wave through B-per-ampere at the center sensor, on the same phase axis
+  const M=coilModelCached();
+  let model=null;
+  if(M&&ST){
+    const hz=1e6/r.per;
+    const p=solvePulse(cfg.coil.v,M.L,M.R,cfg.coil.vf,ST.pw||curPw(),r.per);
+    model=new Array(r.n).fill(0);
+    let wi=0;
+    for(let i=0;i<r.n;i++){
+      const t=i/r.n*r.per;
+      while(wi<p.wave.length-1&&p.wave[wi+1][0]<=t)wi++;
+      model[i]=p.wave[wi][1]*M.sensCPerA*1e6;
+    }
+    // scale the model to the measured amplitude: the shape is the model's, the height is real
+    const mMax=Math.max(...r.b),dMax=Math.max(...model);
+    if(dMax>1e-9&&mMax>0.5)for(let i=0;i<r.n;i++)model[i]*=mMax/dMax;
+  }
+  const series=[{ys:r.b,color:cssVar('--acc'),width:2}];
+  if(model)series.push({ys:model,color:cssVar('--acc2'),dash:[5,4],width:1.3});
+  drawChart(cv,{n:r.n,series,x0:0,x1:r.per/1000,xu:'ms',zero:true});
+  $('#foldCap').textContent='µT across one period · '+r.cyc+' cycles folded';
+}
+async function specTick(){
+  clearTimeout(SCOPE.t3);
+  if(TAB==='measure'&&DEV.on&&!document.hidden){
+    SCOPE.spec=await apiQuiet('/api/spec');
+    specDraw();
+  }
+  SCOPE.t3=setTimeout(specTick,900);
+}
+function specDraw(){
+  const r=SCOPE.spec,cv=$('#chSpec');
+  if(!r||!r.n)return;
+  drawChart(cv,{n:r.n,series:[{ys:r.a,color:cssVar('--acc2'),fill:true}],
+    x0:0,x1:r.n*r.df,xu:'Hz',zero:true,
+    marker:r.pk&&r.pk.hz>0?r.pk.hz/(r.n*r.df):undefined});
+  $('#specCap').textContent=r.pk&&r.pk.hz>0?
+    ('peak '+fmt(r.pk.hz,2)+' Hz · '+fmt(r.pk.amp,1)+' µT · SNR '+fmt(r.pk.snr,0)+' · Δf '+fmt(r.df,2)+' Hz'):
+    ('no dominant tone · Δf '+fmt(r.df,2)+' Hz');
+}
+function renderMeasure(){
+  if(TAB!=='measure'||!ST)return;
+  const s=ST;
+  const put=(id,arr)=>{$('#'+id).innerHTML=arr[0]+'<small>'+arr[1]+'</small>';};
+  put('mB0',fmtUT(s.b0));put('mB1',fmtUT(s.b1));
+  $('#mB0s').textContent=s.z0?'zeroed':'raw zero (Vcc/2)';
+  $('#mB1s').textContent=s.z1?'zeroed':'raw zero (Vcc/2)';
+  $('#mDb').innerHTML=fmt(s.db,Math.abs(s.db)>=100?0:1)+'<small>mT/s</small>';
+  $('#mF').innerHTML=s.f>0?fmtHzV(s.f)+'<small>Hz</small>':'—';
+  $('#mFs').textContent=s.f>0?fmt(s.fa,1)+' µT tone · SNR '+fmt(s.snr,0):'';
+  $('#clipPill').classList.toggle('hide',!s.clip);
+  $('#zeroInfo').textContent='Zeroing stores 0.25 s of quiet field (Earth + offset) as the baseline. Zero with the coil OFF.';
+  $('#statWin').textContent='over '+fmtSec(s.ss);
+  put('sMax0',fmtUT(s.bm0));put('sMax1',fmtUT(s.bm1));
+  $('#sDbm').innerHTML=fmt(s.dbm,s.dbm>=100?0:1)+'<small>mT/s</small>';
+  put('sAvg0',fmtUT(s.ba0));put('sAvg1',fmtUT(s.ba1));put('sRms',fmtUT(s.brms));
+  const M=coilModelCached();
+  if(M&&M.sensCPerA>0){
+    const k=M.depthPerA/M.sensCPerA;
+    $('#sMax0d').textContent='at depth '+fmtUT(s.bm0*k)[0]+' '+fmtUT(s.bm0*k)[1];
+    $('#sAvg0d').textContent='at depth '+fmtUT(s.ba0*k)[0]+' '+fmtUT(s.ba0*k)[1];
+    $('#sDbmD').textContent='at depth '+fmt(s.dbm*k,1)+' mT/s';
+    // face profile scaled to the center sensor
+    const Iest=M.sensCPerA>0?(s.bm0*1e-6)/M.sensCPerA:0;
+    const N=80,rmax=M.outer*1.35,ysF=[],ysD=[];
+    for(let i=0;i<N;i++){const rr=i/(N-1)*rmax;
+      ysF.push(Math.abs(coilBperA(M.turns,rr,-Math.max(cfg.coil.gap,1)/1000)[0])*Iest*1e6);
+      ysD.push(Math.abs(coilBperA(M.turns,rr,-cfg.coil.depth/100)[0])*Iest*1e6);}
+    drawChart($('#chFace'),{n:N,series:[{ys:ysF,color:cssVar('--acc')},{ys:ysD,color:cssVar('--acc2'),dash:[5,4]}],
+      x0:0,x1:rmax*100,xu:'cm',zero:true});
+    const predPerim=M.perimPerA*Iest*1e6;
+    $('#fitTxt').textContent=predPerim>0.5&&s.bm1>0.5?
+      fmt(100*s.bm1/predPerim,0)+'% (perimeter measured / model)':'—';
+  }
+}
+$('#zero0').onclick=()=>cmd('zero',{ch:0});
+$('#zero1').onclick=()=>cmd('zero',{ch:1});
+$('#zeroBoth').onclick=()=>cmd('zero',{ch:2});
+$('#zeroClr').onclick=()=>cmd('zeroclear',{ch:2});
+$('#clrMax').onclick=()=>cmd('clear',{w:'max'});
+$('#clrAvg').onclick=()=>cmd('clear',{w:'avg'});
+$('#clrAll').onclick=()=>cmd('clear',{w:'all'});
+
+/* ================= settings: safety ================= */
+function fillSafety(){
+  $$('#unitSeg button').forEach(b=>b.classList.toggle('on',b.dataset.u===(unitF()?'F':'C')));
+  const u=degSym();
+  $('#safeU1').textContent=u;$('#safeU2').textContent=u;$('#safeU3').textContent=u+'/min';$('#safeU4').textContent=u+'/min';
+  const set=(id,v)=>{const el=$('#'+id);if(el!==document.activeElement)el.value=Math.round(v*10)/10;};
+  set('s_coilMax',degOut(cfg.safe.coilMax));set('s_fetMax',degOut(cfg.safe.fetMax));
+  set('s_coilRate',unitF()?cfg.safe.coilRate:cfg.safe.coilRate*5/9);
+  set('s_fetRate',unitF()?cfg.safe.fetRate:cfg.safe.fetRate*5/9);
+  $('#s_on').checked=cfg.safe.on;$('#s_needReset').checked=cfg.safe.needReset;$('#s_needProbe').checked=cfg.safe.needProbe;
+  $('#bypassNote').classList.toggle('hide',cfg.safe.on);
+}
+$('#unitSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  store('mg-unit',b.dataset.u);fillSafety();renderState();});
+$('#s_coilMax').addEventListener('change',e=>{cfg.safe.coilMax=clamp(degIn(Number(e.target.value)),80,180);fillSafety();touch();});
+$('#s_fetMax').addEventListener('change',e=>{cfg.safe.fetMax=clamp(degIn(Number(e.target.value)),80,220);fillSafety();touch();});
+$('#s_coilRate').addEventListener('change',e=>{const v=Number(e.target.value);cfg.safe.coilRate=clamp(unitF()?v:v*9/5,1,120);fillSafety();touch();});
+$('#s_fetRate').addEventListener('change',e=>{const v=Number(e.target.value);cfg.safe.fetRate=clamp(unitF()?v:v*9/5,1,120);fillSafety();touch();});
+$('#s_on').addEventListener('change',e=>{cfg.safe.on=e.target.checked;fillSafety();touch();});
+$('#s_needReset').addEventListener('change',e=>{cfg.safe.needReset=e.target.checked;touch();});
+$('#s_needProbe').addEventListener('change',e=>{cfg.safe.needProbe=e.target.checked;touch();});
+$('#safeSaveDef').onclick=()=>{store('mg-safe-def',cfg.safe);
+  $('#safeSaveDef').textContent='Saved ✓';setTimeout(()=>$('#safeSaveDef').textContent='Save as my defaults',1200);};
+$('#safeLoadDef').onclick=()=>{const d=load('mg-safe-def',null);
+  if(d){cfg.safe=normalize({safe:d}).safe;fillSafety();touch();}};
+$('#safeFactory').onclick=()=>{cfg.safe=defCfg().safe;fillSafety();touch();};
+
+/* ================= settings: LEDs ================= */
+function fillLed(){
+  $('#l_mode').value=String(cfg.led.mode);
+  $('#rowLedCol').classList.toggle('hide',cfg.led.mode===2);
+  $('#rowLedSrc').classList.toggle('hide',cfg.led.mode!==2);
+  $('#rowLedRange').classList.toggle('hide',cfg.led.mode!==2);
+  $('#l_col').value=cfg.led.col;
+  $('#l_src').value=String(cfg.led.dataSrc);
+  $('#l_min').value=cfg.led.dataMin;$('#l_max').value=cfg.led.dataMax;
+  $('#l_master').value=cfg.led.master;$('#l_coil').value=cfg.led.coilBright;
+  $('#ledLegend').innerHTML=
+    'amber breathe - joining Wi-Fi / update steps (1-3 blinks)<br>'+
+    'cyan breathe - firmware update busy<br>'+
+    'red→yellow→green - online update download, 1 Hz heartbeat<br>'+
+    'solid green - update installed · red N blinks - update failed, reason N<br>'+
+    'soft dim pulse - idle (steady colored when a phone is connected)<br>'+
+    'slow fade swell - treatment running (your color / stage colors / data)<br>'+
+    'amber double-blink - paused · green triple pulse - finished<br>'+
+    'red N blinks then a gap - safety stop: 1 coil temp, 2 MOSFET temp, 3 coil rate, 4 MOSFET rate, 5 stuck pin, 6 probe<br>'+
+    'The coil-rim LED mirrors the treatment swell and the pause/stop blinks.';
+}
+$('#l_mode').addEventListener('change',e=>{cfg.led.mode=Number(e.target.value);fillLed();touch();});
+$('#l_col').addEventListener('change',e=>{cfg.led.col=e.target.value;touch();});
+$('#l_src').addEventListener('change',e=>{cfg.led.dataSrc=Number(e.target.value);touch();});
+$('#l_min').addEventListener('change',e=>{cfg.led.dataMin=Number(e.target.value)||0;touch();});
+$('#l_max').addEventListener('change',e=>{cfg.led.dataMax=Number(e.target.value)||100;touch();});
+$('#l_master').addEventListener('change',e=>{cfg.led.master=Number(e.target.value);touch();});
+$('#l_coil').addEventListener('change',e=>{cfg.led.coilBright=Number(e.target.value);touch();});
+
+/* ================= settings: sensors ================= */
+function fillSensors(){
+  const set=(id,v)=>{const el=$('#'+id);if(el!==document.activeElement)el.value=v;};
+  set('h_sc',cfg.hall.sens5c);set('h_sp',cfg.hall.sens5p);set('h_vcc',cfg.hall.vcc);
+  $('#h_ratio').checked=cfg.hall.ratio;
+  set('t_beta',cfg.therm.beta);set('t_r0',cfg.therm.r0);set('t_rs',cfg.therm.rs);
+  $('#t_top').checked=cfg.therm.top;
+  set('h_gap',cfg.coil.gap);
+}
+$('#h_sc').addEventListener('change',e=>{cfg.hall.sens5c=clamp(Number(e.target.value)||1.4,0.1,20);touch();});
+$('#h_sp').addEventListener('change',e=>{cfg.hall.sens5p=clamp(Number(e.target.value)||1.4,0.1,20);touch();});
+$('#h_vcc').addEventListener('change',e=>{cfg.hall.vcc=clamp(Number(e.target.value)||3.3,2.5,5.5);touch();});
+$('#h_ratio').addEventListener('change',e=>{cfg.hall.ratio=e.target.checked;touch();});
+$('#t_beta').addEventListener('change',e=>{cfg.therm.beta=clamp(Number(e.target.value)||3950,1000,8000);touch();});
+$('#t_r0').addEventListener('change',e=>{cfg.therm.r0=clamp(Number(e.target.value)||10,0.5,500);touch();});
+$('#t_rs').addEventListener('change',e=>{cfg.therm.rs=clamp(Number(e.target.value)||10,0.5,500);touch();});
+$('#t_top').addEventListener('change',e=>{cfg.therm.top=e.target.checked;touch();});
+$('#h_gap').addEventListener('change',e=>{cfg.coil.gap=clamp(Number(e.target.value)||2,0,20);touch();});
+
+/* ================= settings: pins ================= */
+const PIN_DEFS=[['drive','Coil drive',false],['hallC','Hall center',true],['hallP','Hall perimeter',true],
+  ['thC','Thermistor coil',true],['thF','Thermistor MOSFET',true],['r','RGB red',false],['g','RGB green',false],
+  ['b','RGB blue',false],['coil','Coil LED',false]];
+const PIN_ALL=[1,2,3,4,5,6,7,8,9,21,43,44],PIN_ADC=[1,2,3,4,5,6,7,8,9];
+function fillPins(){
+  const host=$('#pinGrid');
+  if(!host.childElementCount){
+    host.innerHTML=PIN_DEFS.map(d=>'<div><label>'+d[1]+(d[2]?' (ADC)':'')+'</label>'+
+      '<select class="txt" data-pin="'+d[0]+'">'+
+      (d[2]?PIN_ADC:PIN_ALL).map(p=>'<option value="'+p+'">GPIO '+p+(p===21?' (LED)':p===43||p===44?' (UART pad)':p===3?' (strap)':'')+'</option>').join('')+
+      '</select></div>').join('');
+    host.addEventListener('change',e=>{
+      const k=e.target.dataset.pin;if(!k)return;
+      cfg.pins[k]=Number(e.target.value);
+      pinCheck();touch();});
+  }
+  for(const d of PIN_DEFS)host.querySelector('[data-pin='+d[0]+']').value=String(cfg.pins[d[0]]);
+  $('#p_coilLow').checked=cfg.pins.coilLow;
+  $('#p_anode').checked=cfg.pins.anode;
+  pinCheck();
+}
+function pinCheck(){
+  const v=PIN_DEFS.map(d=>cfg.pins[d[0]]);
+  const dup=new Set(v).size!==v.length;
+  const adcBad=['hallC','hallP','thC','thF'].some(k=>!PIN_ADC.includes(cfg.pins[k]));
+  $('#pinWarn').classList.toggle('show',dup||adcBad);
+}
+$('#p_coilLow').addEventListener('change',e=>{cfg.pins.coilLow=e.target.checked;touch();});
+$('#p_anode').addEventListener('change',e=>{cfg.pins.anode=e.target.checked;touch();});
+
+/* ================= settings: connection ================= */
+let NET=null;
+async function netRefresh(){NET=await apiQuiet('/api/net');renderConnCard();}
+function renderConnCard(){
+  const host=$('#connBody');
+  if(!host)return;
+  let h='';
+  if(!ONDEV){
+    h+='<div class="row"><div class="lbl">Reach the device</div><div class="seg" id="tgtSeg">'+
+      TARGETS.map((t,i)=>'<button data-i="'+i+'" class="'+(WS.target===i?'on':'')+'">'+(i?'Direct':'Home')+'</button>').join('')+'</div></div>';
+    h+='<div class="flex mt8"><button class="btn sm pri" id="connGo">'+(DEV.on?'Connected ✓':'Connect')+'</button>'+
+      '<span class="small mut">'+(DEV.on?('via '+DEV.label):'wss://'+TARGETS[WS.target].host)+'</span></div>';
+    h+='<div class="note small">The installed app talks over a secure socket. First time: join the device’s own page at '+
+      'http://192.168.4.1 once, install its certificate profile (Settings there), and trust it under '+
+      'Settings › General › About › Certificate Trust.</div>';
+  }else{
+    h+='<div class="kv"><span class="mut">This page</span><b>served by the device over http</b></div>';
+    h+='<div class="flex mt8"><a class="btn sm" href="/magneto.mobileconfig">Download certificate profile</a>'+
+      '<button class="btn sm ghost" id="secTest">Test secure link</button></div>'+
+      '<div class="small mut mt8" id="secOut"></div>';
+  }
+  if(NET){
+    h+='<div class="kv mt8"><span class="mut">Mode wanted</span><b>'+(NET.wanted==='sta'?'Home network':'Own access point')+'</b></div>'+
+      '<div class="kv"><span class="mut">Radio now</span><b>'+(NET.radio==='sta'?'home network, '+NET.ip:'AP, '+NET.ip)+
+      (NET.fail?' · join failed, fell back':'')+'</b></div>';
+    h+='<div class="row mt8"><div class="lbl">Home Wi-Fi name</div><input class="txt" id="n_ssid" style="max-width:190px" value=""></div>'+
+      '<div class="row"><div class="lbl">Password</div><input class="txt" id="n_pass" type="password" style="max-width:190px" placeholder="'+(NET.hasPass?'(saved)':'')+'"></div>'+
+      '<div class="flex mt8"><button class="btn sm" id="netSta">Join home network</button>'+
+      '<button class="btn sm ghost" id="netAp">Own access point</button></div>'+
+      '<div class="small mut mt8">Either way the page stays at http://192.168.4.1 (its own Wi-Fi) or http://magneto.local (home network). Changing the mode reboots the device.</div>';
+  }
+  host.innerHTML=h;
+  const tg=$('#tgtSeg');
+  if(tg)tg.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    WS.target=Number(b.dataset.i);store('mg-target',WS.target);wsClose();DEV.on=false;connectNow();});
+  const cg=$('#connGo');if(cg)cg.onclick=()=>{wsClose();DEV.on=false;connectNow();};
+  const stBtn=$('#secTest');if(stBtn)stBtn.onclick=secTest;
+  const ns=$('#netSta');if(ns)ns.onclick=async()=>{
+    const ssid=$('#n_ssid').value.trim(),pass=$('#n_pass').value;
+    if(!ssid&&!NET.ssid)return;
+    const q=new URLSearchParams({mode:'sta'});if(ssid)q.set('ssid',ssid);if(pass)q.set('pass',pass);
+    twoTap(ns,async()=>{await apiQuiet('/api/net',{method:'POST',form:true,body:q.toString()});},'Reboot into home Wi-Fi?');};
+  const na=$('#netAp');if(na)na.onclick=()=>twoTap(na,async()=>{
+    await apiQuiet('/api/net',{method:'POST',form:true,body:'mode=ap'});},'Reboot into AP mode?');
+  if(NET&&$('#n_ssid'))$('#n_ssid').value=NET.ssid||'';
+}
+async function secTest(){
+  const out=$('#secOut');
+  out.textContent='Opening wss://'+location.hostname+'/ws …';
+  const before=await apiQuiet('/api/secure');
+  let opened=false;
+  try{
+    await new Promise((res,rej)=>{
+      const s=new WebSocket('wss://'+location.hostname+'/ws');
+      const to=setTimeout(()=>{try{s.close();}catch(e){}rej(new Error('timeout'));},8000);
+      s.onopen=()=>{opened=true;clearTimeout(to);s.close();res();};
+      s.onerror=()=>{};
+      s.onclose=()=>{clearTimeout(to);opened?res():rej(new Error('closed'));};
+    });
+  }catch(e){}
+  const after=await apiQuiet('/api/secure');
+  if(opened)out.textContent='Secure link works - this phone trusts the certificate.';
+  else if(after&&before&&after.opened>before.opened)out.textContent='The server saw the attempt but the page was refused (wrong origin?).';
+  else if(after&&!after.running)out.textContent='The secure server is not running on the device.';
+  else out.textContent='Could not open the socket. Install the certificate profile and switch on trust under Settings › General › About › Certificate Trust Settings.';
+}
+
+/* ================= settings: update ================= */
+const UPD_ERR={e1:'Could not join the Wi-Fi network.',e2:'Joined, but no internet time (is the network online?).',
+  e3:'Could not find the release on GitHub.',e4:'The download failed part way.',e5:'The new firmware did not flash.'};
+let UPD={info:null,busy:false,arm:0};
+async function renderUpdateCard(){
+  const host=$('#updBody');
+  if(!host)return;
+  if(DEV.on&&!UPD.info)UPD.info=await apiQuiet('/api/update');
+  const i=UPD.info;
+  let h='<div class="kv"><span class="mut">Firmware</span><b>'+(ST?ST.ver:(i?i.ver:'—'))+'</b></div>';
+  if(i&&i.last){
+    h+=i.last==='ok'?'<div class="note ok">Last online update: installed'+(i.from?' (was v'+i.from+')':'')+'.</div>'
+      :'<div class="note bad">Last online update failed: '+(UPD_ERR[i.last]||i.last)+'</div>';
+  }
+  h+='<div class="row"><div class="lbl">Wi-Fi name<span class="small mut">used only during the update</span></div>'+
+    '<input class="txt" id="u_ssid" style="max-width:180px" value="'+(i?String(i.ssid||'').replace(/"/g,'&quot;'):'')+'"></div>'+
+    '<div class="row"><div class="lbl">Password</div><input class="txt" id="u_pass" type="password" style="max-width:180px" placeholder="'+(i&&i.hasPass?'(saved)':'')+'"></div>';
+  h+='<details class="fold"><summary>GitHub source</summary><div>'+
+    '<div class="row"><div class="lbl">Repository</div><input class="txt" id="u_repo" style="max-width:220px" value="'+(i?i.repo:'combsbw/magneto')+'"></div>'+
+    '<div class="row"><div class="lbl">Token<span class="small mut">only for a private repo</span></div>'+
+    '<input class="txt" id="u_tok" type="password" style="max-width:220px" placeholder="'+(i&&i.hasToken?'(saved)':'none')+'"></div></div></details>';
+  h+='<div class="flex mt8"><button class="btn sm" id="updSave">Save</button>'+
+    '<button class="btn sm pri" id="updGo">Update now</button><span class="updpct" id="updMsg"></span></div>';
+  h+='<div class="note small" id="updExplain">Update now: the device leaves this Wi-Fi, joins the network above, pulls the newest build from '+
+    'GitHub, installs it and restarts. Watch the LED: amber = connecting (1-3 blinks for the step), '+
+    'progress color = downloading, solid green = done, red blinks = the failure number.</div>';
+  if(ONDEV)h+='<div class="row mt8"><div class="lbl">Firmware file<span class="small mut">magneto.ota.bin from the Releases page</span></div>'+
+    '<input type="file" id="fwFile" accept=".bin"></div>'+
+    '<div class="flex"><button class="btn sm" id="fwGo">Upload</button><div class="bar grow"><i id="fwBar" style="width:0"></i></div></div>';
+  host.innerHTML=h;
+  $('#updSave').onclick=updSaveNow;
+  $('#updGo').onclick=updGo;
+  const fg=$('#fwGo');if(fg)fg.onclick=fwUpload;
+}
+async function updSaveNow(){
+  const q=new URLSearchParams();
+  q.set('ssid',$('#u_ssid').value.trim());
+  const pass=$('#u_pass').value;if(pass)q.set('pass',pass);
+  q.set('repo',$('#u_repo')?$('#u_repo').value.trim():'');
+  const tok=$('#u_tok')?$('#u_tok').value:'';if(tok)q.set('token',tok);
+  const r=await apiQuiet('/api/update/save',{method:'POST',form:true,body:q.toString()});
+  $('#updMsg').textContent=r&&r.ok?'Saved.':'Save failed.';
+  UPD.info=null;
+}
+async function updGo(){
+  const b=$('#updGo');
+  if(UPD.busy)return;
+  if(!$('#u_ssid').value.trim()){$('#updMsg').textContent='Enter the Wi-Fi name first.';return;}
+  twoTap(b,async()=>{
+    UPD.busy=true;$('#updMsg').textContent='Starting…';
+    try{await updSaveNow();await api('/api/update/start',{method:'POST'});}
+    catch(e){$('#updMsg').textContent='Could not start: '+e.message;UPD.busy=false;return;}
+    $('#updMsg').textContent='Updating - watch the LED. This page loses the device for a minute or two.';
+    const back=await waitDevice(140);
+    UPD.info=null;
+    if(back){const i2=await apiQuiet('/api/update');
+      $('#updMsg').textContent=i2&&i2.last==='ok'?'Updated: now v'+i2.ver+(i2.from?' (was v'+i2.from+')':'')+'.':
+        (i2&&i2.last?(UPD_ERR[i2.last]||'The update failed.'):'Back, but no result stored.');}
+    else $('#updMsg').textContent='The device has not come back yet - rejoin its Wi-Fi and reload.';
+    UPD.busy=false;renderUpdateCard();
+  },'Tap again to start');
+}
+async function waitDevice(tries){
+  for(let i=0;i<tries;i++){
+    await new Promise(r=>setTimeout(r,900));
+    if(!ONDEV&&(!WS.sock||WS.sock.readyState!==1)){await connectNow();}
+    const s=await apiQuiet('/api/state');
+    if(s)return true;
+  }
+  return false;
+}
+function fwUpload(){
+  const f=$('#fwFile').files[0];
+  if(!f){$('#updMsg').textContent='Choose the .bin first.';return;}
+  const fd=new FormData();fd.append('firmware',f,f.name);
+  const x=new XMLHttpRequest();
+  x.open('POST','/update');
+  x.upload.onprogress=e=>{if(e.lengthComputable)$('#fwBar').style.width=(e.loaded/e.total*100)+'%';};
+  x.onload=()=>{$('#updMsg').textContent=x.status===200?'Installed - the device is rebooting.':'Upload failed.';};
+  x.onerror=()=>{$('#updMsg').textContent='Upload failed.';};
+  x.send(fd);
+}
+
+/* ================= settings: device ================= */
+function renderDevice(){
+  const host=$('#devBody');
+  if(!host)return;
+  const s=ST;
+  host.innerHTML=s?(
+    '<div class="kv"><span class="mut">Firmware</span><b>v'+s.ver+'</b></div>'+
+    '<div class="kv"><span class="mut">Network</span><b>'+(s.net==='sta'?'home network':'own AP')+(s.fail?' (join failed)':'')+'</b></div>'+
+    '<div class="kv"><span class="mut">Up</span><b>'+fmtSec(s.up)+'</b></div>'+
+    '<div class="kv"><span class="mut">Free heap</span><b>'+Math.round(s.heap/1024)+' kB</b></div>'+
+    (s.net==='sta'?'<div class="kv"><span class="mut">Signal</span><b>'+s.rssi+' dBm</b></div>':'')+
+    '<div class="kv"><span class="mut">Last reset</span><b>'+s.rst+(s.bo>0?' · '+s.bo+' brown-outs':'')+'</b></div>'+
+    '<div class="kv"><span class="mut">Sampling</span><b>'+fmt(s.fs/1000,1)+' kS/s per hall channel</b></div>'
+  ):'<div class="small mut">Connect to the device to see its status.</div>';
+}
+$('#btnReboot').onclick=()=>twoTap($('#btnReboot'),()=>apiQuiet('/api/reboot',{method:'POST'}),'Reboot?');
+
+/* ================= boot ================= */
+function fillAll(){
+  fillTimer();fillStages();
+  $('#stagesOn').checked=cfg.ui.stagesOn;
+  $('#stagesBody').classList.toggle('hide',!cfg.ui.stagesOn);
+  $('#stagesOffNote').classList.toggle('hide',cfg.ui.stagesOn);
+  fillCoilInputs();fillSafety();fillLed();fillSensors();fillPins();
+  slidersPaint();renderPlanInfo();renderPresets();
+  MCACHE.key='';if(TAB==='coil')coilRecalc();
+}
+setInterval(()=>{if(TAB==='set')renderDevice();},1000);
+setInterval(()=>{if(TAB==='set'&&DEV.on&&!NET)netRefresh();},1500);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollNow();if(!ONDEV&&!DEV.on)connectNow();}});
+addEventListener('pageshow',()=>{pollNow();});
+addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='measure'){scopeDraw();foldDraw();specDraw();}},200));
+// suppress the iOS long-press menu on controls (inputs keep theirs)
+document.addEventListener('contextmenu',e=>{if(!e.target.closest('input,textarea'))e.preventDefault();});
+
+fillAll();
+presetsLoad();
+pollNow();
+if(!ONDEV)connectNow();
+</script>
+</div><script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}</script></body></html>

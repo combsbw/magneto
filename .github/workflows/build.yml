@@ -1,0 +1,67 @@
+name: Build firmware
+
+# Compiles the sketch with the pinned ESP32 core (2.0.17) for the ESP32-S3, runs the host tests of the treatment engine,
+# and keeps the .bin files as a downloadable artifact. Every push to main also refreshes the "latest" release, so the
+# newest .bin files are always one click away on the Releases page (no tags to manage).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write      # only used to refresh the "latest" release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host tests (engine and settings parser)
+        run: make test
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core 2.0.17
+        run: make deps
+
+      - name: Rebuild the embedded web page and the Pages site
+        run: |
+          python3 tools/embed_ui.py
+          python3 tools/build_pages.py
+          git diff --exit-code -- docs
+
+      - name: Compile (esp32:esp32:XIAO_ESP32S3)
+        run: make build
+
+      - name: Collect binaries
+        run: |
+          ls -l build
+          mkdir -p dist
+          cp build/magneto.ino.bin dist/magneto.ota.bin
+          # one image for a first USB flash at address 0x0: bootloader + partition table + boot_app0 + app
+          pip install --quiet esptool
+          BOOT_APP0=$(find ~/.arduino15/packages/esp32/hardware/esp32/2.0.17/tools/partitions -name boot_app0.bin | head -1)
+          python3 -m esptool --chip esp32s3 merge_bin -o dist/magneto.full.bin \
+            --flash_mode keep --flash_freq keep --flash_size keep \
+            0x0 build/magneto.ino.bootloader.bin \
+            0x8000 build/magneto.ino.partitions.bin \
+            0xe000 "$BOOT_APP0" \
+            0x10000 build/magneto.ino.bin
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magneto-firmware
+          path: dist/*.bin
+
+      - name: Refresh the "latest" release (main only)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest dist/*.bin --target "$GITHUB_SHA" --latest \
+            --title "Latest build" \
+            --notes "Built from commit ${GITHUB_SHA::7}. magneto.ota.bin = update through the page (Settings > Device); magneto.full.bin = first USB flash at 0x0."
