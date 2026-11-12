@@ -23,9 +23,11 @@ CLI        ?= arduino-cli
 BUILD      := build
 BIN        := $(BUILD)/$(SKETCH).ino.bin
 
-# USB port: first ESP32-S3 that arduino-cli sees (Linux /dev/ttyACM*, macOS /dev/cu.usbmodem*, Windows COMn).
-# If the board does not show up, hold BOOT while plugging it in, then run make ports again.
-PORT       ?= $(shell $(CLI) board list 2>/dev/null | awk 'tolower($$0) ~ /esp32s3|esp32-s3|s3 dev/ {print $$1; exit}')
+# USB port: the first port arduino-cli identifies as an ESP32-S3, else the first USB serial port
+# (macOS /dev/cu.usbmodem*, Linux /dev/ttyACM* or /dev/ttyUSB*) - an S3 often enumerates with no
+# identifiable board name, and Bluetooth serial ports must never be picked up.
+# If nothing shows up at all, hold BOOT while plugging the board in, then run make ports again.
+PORT       ?= $(shell $(CLI) board list 2>/dev/null | awk 'tolower($$0) ~ /esp32s3|esp32-s3|s3 dev/ {found=1; print $$1; exit} $$1 ~ /usbmodem|ttyACM|ttyUSB/ {if (!usb) usb=$$1} END {if (!found && usb) print usb}')
 
 # Wi-Fi update: the soft AP is 192.168.4.1. On home Wi-Fi, pass the device address (OTA_HOST=magneto.local).
 # ArduinoOTA listens on 3232 (no password).
