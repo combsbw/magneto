@@ -72,17 +72,24 @@ a{color:var(--acc)}
 .tile.sel{outline:2px solid var(--acc);outline-offset:-1px}
 
 /* ---- buttons, chips, segments, switches ---------------------------------- */
-.btn{border:1px solid var(--line);background:var(--card2);border-radius:11px;padding:10px 16px;font-size:14.5px;
-  font-weight:600;cursor:pointer;transition:transform .06s}
-.btn:active{transform:scale(.97)}
-.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
-.btn.good{background:var(--good);border-color:var(--good);color:#fff}
-.btn.warn{background:var(--warnsoft);border-color:var(--warn);color:var(--warn)}
-.btn.bad{background:var(--badsoft);border-color:var(--bad);color:var(--bad)}
-.btn.ghost{background:transparent}
-.btn.big{padding:13px 18px;font-size:16px;border-radius:13px}
-.btn:disabled{opacity:.4;cursor:default}
-.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:9px}
+.btn{border:1px solid var(--line2);border-radius:11px;padding:10px 16px;font-size:14.5px;font-weight:600;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%),var(--card2);
+  box-shadow:0 2px 0 var(--line2),0 3px 6px rgba(10,18,32,.16),inset 0 1px 0 rgba(255,255,255,.25);
+  transition:transform .07s,box-shadow .07s;transform:translateY(0)}
+html[data-th="dark"] .btn{box-shadow:0 2px 0 rgba(0,0,0,.5),0 3px 7px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.07)}
+.btn:active{transform:translateY(2px);box-shadow:0 0 0 var(--line2),0 1px 2px rgba(10,18,32,.18),inset 0 2px 5px rgba(10,18,32,.22)}
+.btn.pri{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 50%),var(--acc);border-color:var(--acc);color:#fff;
+  box-shadow:0 2px 0 rgba(0,0,0,.28),0 3px 7px rgba(10,18,32,.25),inset 0 1px 0 rgba(255,255,255,.3)}
+.btn.good{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 50%),var(--good);border-color:var(--good);color:#fff}
+.btn.warn{background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,0) 50%),var(--warnsoft);border-color:var(--warn);color:var(--warn)}
+.btn.bad{background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,0) 50%),var(--badsoft);border-color:var(--bad);color:var(--bad)}
+.btn.pri:active,.btn.good:active{box-shadow:0 0 0 rgba(0,0,0,.3),inset 0 2px 6px rgba(0,0,0,.35)}
+.btn.ghost{background:transparent;box-shadow:none;border-color:var(--line)}
+.btn.ghost:active{transform:translateY(1px)}
+.btn.big{padding:13px 20px;font-size:16px;border-radius:13px}
+.btn:disabled{opacity:.4;cursor:default;transform:none}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:9px;box-shadow:0 1.5px 0 var(--line2),0 2px 4px rgba(10,18,32,.12),inset 0 1px 0 rgba(255,255,255,.2)}
+.btn.sm:active{transform:translateY(1.5px);box-shadow:inset 0 2px 4px rgba(10,18,32,.2)}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{border:1px solid var(--line);background:var(--chipbg);color:var(--mut);border-radius:99px;
   padding:7px 13px;font-size:13px;cursor:pointer;font-weight:550}
@@ -121,9 +128,12 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--line);border-rad
 .clock{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:1px}
 .clock small{font-size:22px;color:var(--mut);font-weight:600}
 .sub{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
-.stagebar{display:flex;gap:4px;height:7px;border-radius:5px;overflow:hidden;margin:10px 2px 2px}
-.stagebar i{flex:1;background:var(--line2);position:relative;overflow:hidden}
-.stagebar i b{position:absolute;inset:0;width:0;background:var(--acc)}
+.stagebar{display:flex;gap:4px;height:16px;border-radius:9px;overflow:hidden;margin:12px 2px 2px}
+.stagebar i{flex:1;background:var(--line2);position:relative;overflow:hidden;border-radius:4px;
+  box-shadow:inset 0 1.5px 4px rgba(10,18,32,.25)}
+.stagebar i b{position:absolute;inset:0;width:0;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%),var(--acc)}
+.stagebar.pulse i b{width:100%!important;animation:sbpulse 2.4s ease-in-out infinite}
+@keyframes sbpulse{0%,100%{opacity:.25}50%{opacity:.95}}
 .ctl{display:flex;gap:9px;justify-content:center;margin:14px 0 4px;flex-wrap:wrap}
 .tripbox{border:1px solid var(--bad);background:var(--badsoft);border-radius:12px;padding:11px 13px;margin:10px 0;
   color:var(--bad);font-size:13.5px;text-align:left}
@@ -136,13 +146,26 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--line);border-rad
 .vs .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin:3px 0 1px}
 .vs .val small{font-size:12px;color:var(--mut);font-weight:500}
 .vs .duty{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
-.vtrack{position:relative;height:238px;width:62px;margin:10px auto 8px;border-radius:14px;background:var(--line2);
-  touch-action:none;cursor:pointer}
-.vtrack .fill{position:absolute;left:0;right:0;bottom:0;border-radius:14px;background:linear-gradient(180deg,var(--acc2),var(--acc));opacity:.85}
-.vtrack .th{position:absolute;left:-7px;right:-7px;height:30px;border-radius:10px;background:var(--thumb);
-  border:1px solid var(--line2);box-shadow:0 2px 6px rgba(0,0,0,.25);transform:translateY(50%)}
-.vtrack .ceil{position:absolute;left:-10px;right:-10px;height:0;border-top:2.5px dashed var(--bad);opacity:.75}
-.vtrack .ceil:after{content:"max";position:absolute;right:-4px;top:-16px;font-size:10px;color:var(--bad);font-weight:700}
+.vtrack{position:relative;height:238px;width:66px;margin:10px auto 8px;border-radius:14px;background:var(--line2);
+  touch-action:none;cursor:pointer;box-shadow:inset 0 2px 6px rgba(10,18,32,.28),inset 0 -1px 0 rgba(255,255,255,.18)}
+html[data-th="dark"] .vtrack{box-shadow:inset 0 2px 7px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.05)}
+.vtrack .fill{position:absolute;left:0;right:0;bottom:0;border-radius:14px;
+  background:linear-gradient(180deg,var(--acc2),var(--acc)),linear-gradient(90deg,rgba(255,255,255,.3),rgba(255,255,255,0) 40%,rgba(0,0,0,.14));
+  background-blend-mode:normal,overlay;
+  box-shadow:inset 2px 0 3px rgba(255,255,255,.25),inset -2px 0 4px rgba(10,18,32,.25),inset 0 2px 2px rgba(255,255,255,.2)}
+.vtrack .tick{position:absolute;left:8px;right:8px;height:0;border-top:1px solid rgba(128,140,160,.4);pointer-events:none}
+.vtrack .tick.maj{left:5px;right:5px;border-top:1.5px solid rgba(128,140,160,.6)}
+.vtrack .tick span{position:absolute;right:-32px;top:-7px;font-size:9.5px;color:var(--mut);width:30px;text-align:left;
+  font-variant-numeric:tabular-nums}
+.vtrack .th{position:absolute;left:-7px;right:-7px;height:30px;border-radius:10px;transform:translateY(50%);
+  background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%),var(--thumb);
+  border:1px solid var(--line2);box-shadow:0 3px 7px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.4)}
+.vtrack .th:after{content:"";position:absolute;left:14px;right:14px;top:9px;height:2px;border-radius:2px;
+  background:var(--line2);box-shadow:0 5px 0 var(--line2),0 10px 0 var(--line2)}
+.vtrack .ceil{position:absolute;left:-13px;right:-13px;height:0;border-top:2.5px dashed var(--bad);opacity:.85;pointer-events:none}
+.vtrack .ceil .cv{position:absolute;left:-2px;top:-15px;font-size:10px;color:var(--bad);font-weight:700;
+  font-variant-numeric:tabular-nums;text-shadow:0 0 4px var(--card)}
+.vtrack .ceil .cl{position:absolute;right:-2px;top:-15px;font-size:10px;color:var(--bad);font-weight:700;letter-spacing:.5px}
 .vs.locked .vtrack{opacity:.55;cursor:default}
 .vs .lockb{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);
   background:var(--card);cursor:pointer;font-size:14px;line-height:1}
@@ -154,13 +177,23 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--line);border-rad
 .vs .maxrow input{width:66px;padding:5px 6px;font-size:12px}
 
 /* ---- stage editor --------------------------------------------------------- */
-.stg{display:grid;grid-template-columns:34px 1fr 1fr 1fr 40px;gap:6px;align-items:center;padding:6px 0;
-  border-bottom:1px solid var(--line)}
+.stg{padding:8px 0;border-bottom:1px solid var(--line)}
 .stg:last-of-type{border-bottom:0}
-.stg input{width:100%}
-.stg .n{font-size:12px;color:var(--mut);text-align:center;font-weight:700}
-.stg.offrow input:not(.onbox),.stg.offrow input[type=color]{opacity:.35;pointer-events:none}
-.stghead{display:grid;grid-template-columns:34px 1fr 1fr 1fr 40px;gap:6px;font-size:10.5px;color:var(--mut);
+.stg .stgtop{display:grid;grid-template-columns:30px 1fr 42px;gap:6px;align-items:center}
+.stg .stgtop .nm{border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:8px;
+  padding:7px 9px;font-size:13.5px;min-width:0}
+.stg .stgnums{display:grid;grid-template-columns:30px 1fr 1fr 1fr;gap:6px;align-items:center;margin-top:5px}
+.stg .stgnums input{width:100%}
+.stg.offrow input:not(.onbox),.stg.offrow .nm,.stg.offrow input[type=color]{opacity:.35;pointer-events:none}
+.stghead{display:grid;grid-template-columns:30px 1fr 1fr 1fr;gap:6px;font-size:10.5px;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px}
+/* ---- coil layer list ------------------------------------------------------- */
+.lay{display:grid;grid-template-columns:20px 72px 1fr 34px;gap:7px;align-items:center;padding:6px 0;
+  border-bottom:1px solid var(--line)}
+.lay .sw{width:12px;height:12px;border-radius:4px;flex:none}
+.lay .rm{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--card2);
+  cursor:pointer;font-size:14px;color:var(--mut)}
+.layhead{display:grid;grid-template-columns:20px 72px 1fr 34px;gap:7px;font-size:10.5px;color:var(--mut);
   text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px}
 .reprow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:13px}
 .reprow select{width:auto;padding:7px 9px}
@@ -263,7 +296,7 @@ details.fold>div{padding-bottom:11px}
         <button class="lockb" title="Lock the slider">🔓</button>
         <div class="t">FREQUENCY</div>
         <div class="val mono"><span>10.0</span><small> Hz</small></div>
-        <div class="vtrack"><div class="fill"></div><div class="ceil hide"></div><div class="th"></div></div>
+        <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
         <div class="maxrow">ceiling <input class="num" type="number" min="0" max="250" step="0.1" placeholder="off"> Hz</div>
       </div>
@@ -271,7 +304,7 @@ details.fold>div{padding-bottom:11px}
         <button class="lockb" title="Lock the slider">🔓</button>
         <div class="t">PULSE WIDTH</div>
         <div class="val mono"><span>100</span><small> µs</small></div>
-        <div class="vtrack"><div class="fill"></div><div class="ceil hide"></div><div class="th"></div></div>
+        <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
         <div class="maxrow">ceiling <input class="num" type="number" min="0" step="1" placeholder="off"> µs</div>
       </div>
@@ -318,7 +351,6 @@ details.fold>div{padding-bottom:11px}
       <label class="flex small mut">use stages <span class="switch"><input type="checkbox" id="stagesOn"><i></i></span></label>
     </h2>
     <div id="stagesBody" class="hide">
-      <div class="stghead"><span></span><span>Hz</span><span>pulse µs</span><span>mm:ss</span><span>color</span></div>
       <div id="stageRows"></div>
       <div class="reprow">
         <span class="mut small">Repeat</span>
@@ -362,22 +394,23 @@ details.fold>div{padding-bottom:11px}
   </div>
 
   <div class="card">
-    <h2>Windings</h2>
-    <div class="row"><div class="lbl">Layer 1 turns<span class="small mut">closest to the face</span></div>
-      <input class="num" id="c_l1t" type="number" min="1" max="200" step="1"></div>
-    <div class="row"><div class="lbl">Layer 1 wire</div>
-      <select class="txt" id="c_l1awg" style="max-width:150px"></select></div>
-    <div class="row"><div class="lbl">Layer 2 turns<span class="small mut">0 = single layer</span></div>
-      <input class="num" id="c_l2t" type="number" min="0" max="200" step="1"></div>
-    <div class="row"><div class="lbl">Layer 2 wire</div>
-      <select class="txt" id="c_l2awg" style="max-width:150px"></select></div>
-    <div class="row"><div class="lbl">Open center radius<span class="small mut">start of the winding</span></div>
-      <input class="num" id="c_rin" type="number" min="0.1" max="20" step="0.1"> <span class="small mut">cm</span></div>
+    <h2>Windings <span class="sp"></span><button class="btn sm" id="layAdd">+ layer</button></h2>
+    <div class="layhead"><span></span><span>Turns</span><span>Wire</span><span></span></div>
+    <div id="layList"></div>
+    <div class="row"><div class="lbl">Layers share one width<span class="small mut">each layer spreads its turns
+      across the same inner-to-outer span</span></div>
+      <span class="switch"><input type="checkbox" id="c_sameW"><i></i></span></div>
+    <div class="row"><div class="lbl">Open center, major radius<span class="small mut">start of the winding</span></div>
+      <input class="num" id="c_rin" type="number" min="0.1" max="20" step="0.05"> <span class="small mut">cm</span></div>
+    <div class="row"><div class="lbl">Open center, minor radius<span class="small mut">equal = circular coil</span></div>
+      <input class="num" id="c_ry" type="number" min="0.1" max="20" step="0.05"> <span class="small mut">cm</span></div>
     <div class="row"><div class="lbl">Insulation per side<span class="small mut">PVC coating thickness</span></div>
       <input class="num" id="c_ins" type="number" min="0" max="2" step="0.05"> <span class="small mut">mm</span></div>
     <div class="row"><div class="lbl">Center washer<span class="small mut">ferromagnetic backing - not modeled,
       shown for the record</span></div>
       <span class="switch"><input type="checkbox" id="c_washer"><i></i></span></div>
+    <div class="note small hide" id="ellNote">Elliptical turns are modeled as area-equivalent circles
+      (r = √(a·b)) for the field and inductance - exact for the axis scaling, approximate off-axis.</div>
   </div>
 
   <div class="card">
@@ -388,9 +421,12 @@ details.fold>div{padding-bottom:11px}
     <div class="row"><div class="lbl">Measured DC resistance<span class="small mut">0 = use the estimate</span></div>
       <input class="num" id="c_rm" type="number" min="0" step="1"> <span class="small mut">mΩ</span></div>
     <div class="row"><div class="lbl">MOSFET R<sub>DS(on)</sub></div><input class="num" id="c_rds" type="number" min="0" step="1"> <span class="small mut">mΩ</span></div>
-    <div class="row"><div class="lbl">Flyback diode drop</div><input class="num" id="c_vf" type="number" min="0" max="3" step="0.05"> <span class="small mut">V</span></div>
+    <div class="row"><div class="lbl">Flyback clamp voltage<span class="small mut">2× 1.5KE33CA TVS in parallel
+      ≈ 33 V breakdown</span></div><input class="num" id="c_vf" type="number" min="0.2" max="100" step="0.5"> <span class="small mut">V</span></div>
     <div class="note small">Measured L and R carry the model. The geometry estimates below are theoretical
-      coil specs - cross-checks, not the source of the field numbers (the hall sensors are).</div>
+      coil specs - cross-checks, not the source of the field numbers (the hall sensors are). The TVS clamp
+      sets the flyback decay: a 33 V clamp collapses the field far faster than a plain diode, which is where
+      the big off-edge dB/dt comes from.</div>
   </div>
 </div>
 
@@ -454,6 +490,17 @@ details.fold>div{padding-bottom:11px}
     </div>
     <div class="small mut mt8">“at depth” values are the measured numbers carried to the target depth through the
       coil model, scaled to the center sensor.</div>
+  </div>
+
+  <div class="card">
+    <h2>Thermal <span class="sp"></span><span class="small mut mono" id="thSpanTxt">last 10 min</span></h2>
+    <div class="tiles">
+      <div class="tile" id="mTileTc"><div class="l">Coil face</div><div class="v mono" id="mTc">—</div><div class="s" id="mTcS"></div></div>
+      <div class="tile" id="mTileTf"><div class="l">MOSFET</div><div class="v mono" id="mTf">—</div><div class="s" id="mTfS"></div></div>
+      <div class="tile"><div class="l">Coil limit</div><div class="v mono" id="mTcLim">—</div><div class="s" id="mTcHead"></div></div>
+      <div class="tile"><div class="l">MOSFET limit</div><div class="v mono" id="mTfLim">—</div><div class="s" id="mTfHead"></div></div>
+    </div>
+    <div class="ch h200 mt8"><canvas id="chTherm"></canvas><div class="cap" id="thermCap">coil (blue) · MOSFET (teal) · limits dashed</div></div>
   </div>
 
   <div class="card">
@@ -721,30 +768,44 @@ const AWGS=[8,10,12,14,16,18,20,22,24];
 function defCfg(){return{
   pins:{drive:7,hallC:1,hallP:2,thC:3,thF:4,r:5,g:6,b:8,coil:9,anode:true,coilLow:false},
   run:{stages:[
-    {on:true,hz:10,pw:100,sec:1800,col:'#50c8ff'},
-    {on:false,hz:20,pw:100,sec:600,col:'#49e0b8'},
-    {on:false,hz:40,pw:50,sec:600,col:'#b388ff'},
-    {on:false,hz:7.8,pw:200,sec:600,col:'#ffd166'},
-    {on:false,hz:100,pw:20,sec:600,col:'#ff8fa3'}],
+    {on:true,hz:10,pw:100,sec:1800,col:'#50c8ff',name:''},
+    {on:false,hz:20,pw:100,sec:600,col:'#49e0b8',name:''},
+    {on:false,hz:40,pw:50,sec:600,col:'#b388ff',name:''},
+    {on:false,hz:7.8,pw:200,sec:600,col:'#ffd166',name:''},
+    {on:false,hz:100,pw:20,sec:600,col:'#ff8fa3',name:''}],
     rFrom:-1,rTo:-1,rN:1},
   max:{hz:0,pw:0},
   safe:{coilMax:110,fetMax:140,coilRate:20,fetRate:20,on:true,needReset:true,needProbe:true},
   led:{mode:0,col:'#50c8ff',master:80,dataSrc:0,dataMin:70,dataMax:110,coilBright:100},
   hall:{sens5c:1.4,sens5p:1.4,vcc:3.3,ratio:true},
   therm:{beta:3950,r0:10,rs:10,top:false},
-  coil:{l1t:25,l1awg:20,l2t:25,l2awg:12,rin:0.75,ins:0.3,washer:true,v:24,luh:0,rm:0,rds:10,vf:0.45,depth:2,gap:2},
+  coil:{layers:[{t:45,awg:20},{t:22,awg:12}],rin:0.75,ry:0.75,sameW:true,ins:0.3,washer:true,
+    v:24,luh:0,rm:0,rds:10,vf:33,depth:2,gap:2},
   ui:{stagesOn:false,timerMin:30,lockHz:false,lockPw:false}
 };}
+const LAYER_MAX=6;
 function normalize(c){
   const d=defCfg(),o=JSON.parse(JSON.stringify(d));
   if(!c||typeof c!=='object')return o;
   const mrg=(dst,src)=>{for(const k in dst){if(src&&typeof src[k]!=='undefined'){
     if(dst[k]&&typeof dst[k]==='object'&&!Array.isArray(dst[k]))mrg(dst[k],src[k]);
-    else dst[k]=src[k];}}};
+    else if(!Array.isArray(dst[k]))dst[k]=src[k];}}};
   mrg(o,c);
   if(Array.isArray(c.run&&c.run.stages))for(let i=0;i<5;i++)if(c.run.stages[i])mrg(o.run.stages[i],c.run.stages[i]);
+  // winding layers: the stored array wins; an old l1t/l2t config migrates
+  const cc=c.coil||{};
+  if(Array.isArray(cc.layers)&&cc.layers.length){
+    o.coil.layers=cc.layers.slice(0,LAYER_MAX).map(l=>({
+      t:clamp(Math.round(Number(l.t)||1),1,400),
+      awg:AWGS.includes(Number(l.awg))?Number(l.awg):20}));
+  }else if(typeof cc.l1t!=='undefined'){
+    o.coil.layers=[{t:clamp(Math.round(cc.l1t)||25,1,400),awg:AWGS.includes(cc.l1awg)?cc.l1awg:20}];
+    if(cc.l2t>0)o.coil.layers.push({t:clamp(Math.round(cc.l2t),1,400),awg:AWGS.includes(cc.l2awg)?cc.l2awg:12});
+  }
+  if(!(o.coil.ry>0))o.coil.ry=o.coil.rin;
+  if(o.coil.ry>o.coil.rin){const t=o.coil.rin;o.coil.rin=o.coil.ry;o.coil.ry=t;}   // major axis first
   for(const s of o.run.stages){s.hz=clamp(Math.round(s.hz*10)/10,0,250);s.pw=clamp(Math.round(s.pw),1,500000);
-    s.sec=clamp(Math.round(s.sec),0,21600);}
+    s.sec=clamp(Math.round(s.sec),0,21600);s.name=String(s.name||'').slice(0,20);}
   o.max.hz=clamp(o.max.hz||0,0,250);o.max.pw=clamp(o.max.pw||0,0,500000);
   return o;}
 let cfg=normalize(load('mg-cfg-v1',null));
@@ -800,18 +861,45 @@ function loopB(a,rho,z){
   const Br=q*(z/rho)*(-K+E*(a*a+rho*rho+z*z)/d2);
   return[Bz,Br];
 }
-// the coil as turns: [{a: radius m, z: plane m, bare: m}] with the face at z = 0, winding above it
+// the coil as turns, face at z = 0 and the winding above it. Each turn carries:
+//   a     field radius (m) - the area-equivalent circle for an elliptical turn, sqrt(major*minor)
+//   aMaj  major-axis radius (m) for drawing and the perimeter sensor
+//   len   turn perimeter (m) - Ramanujan for an ellipse - for the resistance estimate
+//   z     winding plane (m), bare: conductor radius (m)
+// With sameW every layer spreads its turns across one shared radial span, set by the layer that
+// physically needs the most room; otherwise each layer packs at its own wire pitch from rin out.
+function wireOd(C,l){return AWG[l.awg][0]/1000+2*C.ins/1000;}
+function coilSpan(C){
+  let span=0;
+  for(const l of C.layers)span=Math.max(span,l.t*wireOd(C,l));
+  return span;
+}
 function buildTurns(C){
   const out=[];
-  const w1=AWG[C.l1awg][0]/1000+2*C.ins/1000, w2=AWG[C.l2awg][0]/1000+2*C.ins/1000;
   const rin=C.rin/100;
-  for(let i=0;i<C.l1t;i++)out.push({a:rin+(i+0.5)*w1,z:w1/2,bare:AWG[C.l1awg][0]/2000,awg:C.l1awg});
-  for(let i=0;i<C.l2t;i++)out.push({a:rin+(i+0.5)*w2,z:w1+w2/2,bare:AWG[C.l2awg][0]/2000,awg:C.l2awg});
+  const k=clamp((C.ry||C.rin)/C.rin,0.05,1);        // minor/major ratio, 1 = circular
+  const span=coilSpan(C);
+  let zBase=0;
+  for(const l of C.layers){
+    const od=wireOd(C,l);
+    const pitch=C.sameW?span/l.t:od;
+    for(let i=0;i<l.t;i++){
+      const aMaj=rin+(i+0.5)*pitch;
+      const aMin=aMaj*k;
+      const h=(aMaj-aMin)*(aMaj-aMin)/((aMaj+aMin)*(aMaj+aMin));
+      out.push({
+        a:Math.sqrt(aMaj*aMin),
+        aMaj,
+        len:Math.PI*(3*(aMaj+aMin)-Math.sqrt((3*aMaj+aMin)*(aMaj+3*aMin))),
+        z:zBase+od/2,bare:AWG[l.awg][0]/2000,awg:l.awg,h
+      });
+    }
+    zBase+=od;
+  }
   return out;
 }
-function coilOuterR(C){
-  const w1=AWG[C.l1awg][0]/1000+2*C.ins/1000, w2=AWG[C.l2awg][0]/1000+2*C.ins/1000;
-  return C.rin/100+Math.max(C.l1t*w1,C.l2t*w2);
+function coilOuterR(C){                              // major-axis outer radius (m)
+  return C.rin/100+(C.sameW?coilSpan(C):Math.max.apply(null,C.layers.map(l=>l.t*wireOd(C,l))));
 }
 // field at (rho, z<0 below the face) per ampere
 function coilBperA(turns,rho,z){
@@ -832,10 +920,10 @@ function coilL(turns){
 }
 function coilR(turns){
   let R=0;
-  for(const t of turns)R+=2*Math.PI*t.a*AWG[t.awg][1];
+  for(const t of turns)R+=t.len*AWG[t.awg][1];
   return R;
 }
-function wireLen(turns){let s=0;for(const t of turns)s+=2*Math.PI*t.a;return s;}
+function wireLen(turns){let s=0;for(const t of turns)s+=t.len;return s;}
 
 // one drive cycle of the RL loop: ON leg toward V/R, OFF leg = flyback through the diode toward
 // -Vf/R, truncated at the zero crossing. 8 settling cycles, the ninth is recorded.
@@ -926,6 +1014,7 @@ function drawChart(cv,opt){
     if(s.ys2)for(const v of s.ys2){if(Number.isFinite(v)){if(v<lo)lo=v;if(v>hi)hi=v;}}
   }
   if(opt.hline!==undefined&&Number.isFinite(opt.hline)){if(opt.hline<lo)lo=opt.hline;if(opt.hline>hi)hi=opt.hline;}
+  if(opt.hlines)for(const h of opt.hlines)if(Number.isFinite(h.v)){if(h.v<lo)lo=h.v;if(h.v>hi)hi=h.v;}
   if(!(hi>lo)){lo=0;hi=1;}
   if(opt.zero&&lo>0)lo=0;
   const span=(hi-lo)||1;lo-=span*0.07;hi+=span*0.07;
@@ -953,9 +1042,13 @@ function drawChart(cv,opt){
   }
   // zero line
   if(y0<0&&y1>0){g.strokeStyle=mut;g.globalAlpha=.5;g.beginPath();g.moveTo(padL,Y(0));g.lineTo(W-padR,Y(0));g.stroke();g.globalAlpha=1;}
-  // threshold line
+  // threshold lines
   if(opt.hline!==undefined&&Number.isFinite(opt.hline)){
     g.strokeStyle=cssVar('--bad');g.setLineDash([5,4]);g.beginPath();g.moveTo(padL,Y(opt.hline));g.lineTo(W-padR,Y(opt.hline));g.stroke();g.setLineDash([]);}
+  if(opt.hlines)for(const h of opt.hlines){
+    if(!Number.isFinite(h.v))continue;
+    g.strokeStyle=h.color||cssVar('--bad');g.setLineDash([5,4]);
+    g.beginPath();g.moveTo(padL,Y(h.v));g.lineTo(W-padR,Y(h.v));g.stroke();g.setLineDash([]);}
   for(const s of opt.series||[]){
     const col=s.color||cssVar('--acc');
     if(s.ys2){                      // band: ys = min, ys2 = max
@@ -1040,21 +1133,25 @@ function renderState(){
     :fmtSec(t);
   $('#clockSub').textContent=s?(clockBase.total>0?fmtSec(t)+' of '+fmtSec(clockBase.total):
     (name==='run'?'open treatment':'ready'))+(s.hz>0&&name==='run'?' · '+fmtHzV(s.hz)+' Hz · '+fmtUs(s.pw):''):'connect to the device';
-  // stage bar
+  // stage / progress bar: a filling bar for a timed plan, a slow pulse for an open-ended one
   const pw=planWindows(cfg.run,cfg.ui),bar=$('#stageBar');
   if(bar.childElementCount!==pw.wins.length){bar.innerHTML=pw.wins.map(()=>'<i><b></b></i>').join('');}
+  const openPlan=pw.total<=0;
+  bar.classList.toggle('pulse',openPlan&&name==='run');
   pw.wins.forEach((w,i)=>{
     const seg=bar.children[i],fill=seg.firstChild;
     const stage=cfg.run.stages[w.st];
-    fill.style.background=stage.col;
+    const col=name==='run'||name==='pause'||cfg.ui.stagesOn?stage.col:cssVar('--acc');
+    fill.style.background='linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%),'+col;
     let f=0;
-    if(w.len<=0)f=t>w.start?1:0;
+    if(w.len<=0)f=t>w.start&&name==='run'?1:0;
     else f=clamp((t-w.start)/w.len,0,1);
     fill.style.width=(f*100)+'%';
   });
   const wi=pw.wins.findIndex(w=>w.len<=0?t>=w.start:(t<w.start+w.len));
   const cw=wi>=0?pw.wins[wi]:pw.wins[pw.wins.length-1];
-  $('#stageTxt').textContent=cfg.ui.stagesOn&&cw?('Stage '+(cw.st+1)+(pw.wins.length>1?' · window '+((wi<0?pw.wins.length:wi+1))+'/'+pw.wins.length:'')):'';
+  $('#stageTxt').textContent=cfg.ui.stagesOn&&cw?(stageName(cw.st)+
+    (pw.wins.length>1?' · window '+((wi<0?pw.wins.length:wi+1))+'/'+pw.wins.length:'')):'';
   // buttons
   const idle=name==='idle',run=name==='run',pause=name==='pause',done=name==='done',trip=name==='trip';
   $('#btnStart').classList.toggle('hide',run||trip);
@@ -1093,6 +1190,17 @@ function tempTile(tile,v,sub,tF,ok,rate,limF){
   tile.className='tile'+(tF>limF?' hot':(tF>limF-8?' warm':''));
 }
 
+// rolling temperature history for the Thermal chart: one point every ~2 s, 20 minutes kept
+const TEMPHIST=[];
+let tempHistAt=0;
+function tempRecord(s){
+  const now=Date.now();
+  if(now-tempHistAt<2000)return;
+  tempHistAt=now;
+  TEMPHIST.push({at:now,tc:s.okc?s.tc:NaN,tf:s.okf?s.tf:NaN});
+  while(TEMPHIST.length>620)TEMPHIST.shift();
+}
+
 let pollTimer=0;
 async function pollNow(){
   clearTimeout(pollTimer);
@@ -1101,6 +1209,7 @@ async function pollNow(){
     if(s){
       const was=ST;ST=s;
       clockBase={t:s.t,at:Date.now(),run:s.s==='run',total:s.total};
+      tempRecord(s);
       if(s.rev&&cfgRev&&s.rev!==cfgRev&&!cfgPushing){cfgRev=s.rev;cfgPull();}
       else if(s.rev&&!cfgRev)cfgRev=s.rev;
       if(!was||was.s!==s.s)renderPresets();
@@ -1145,6 +1254,23 @@ function vslider(el,o){
     clamp(Math.log(Math.max(v,r.min)/r.min)/Math.log(r.max/r.min),0,1):
     clamp((v-r.min)/(r.max-r.min),0,1);}
   function unfrac(f){const r=range();return o.log?r.min*Math.pow(r.max/r.min,f):r.min+(r.max-r.min)*f;}
+  let tickKey='';
+  function paintTicks(){
+    const r=range(),key=r.min+'|'+r.max+'|'+(o.log?1:0);
+    if(key===tickKey)return;
+    tickKey=key;
+    track.querySelectorAll('.tick').forEach(t=>t.remove());
+    const marks=o.ticks?o.ticks(r):[];
+    for(const m of marks){
+      const f=frac(m.v);
+      if(f<=0.005||f>=0.995)continue;
+      const d=document.createElement('div');
+      d.className='tick'+(m.maj?' maj':'');
+      d.style.bottom=(f*100)+'%';
+      if(m.label){const sp=document.createElement('span');sp.textContent=m.label;d.appendChild(sp);}
+      track.insertBefore(d,th);          // under the thumb, over the fill
+    }
+  }
   function paint(){
     const v=o.get(),f=frac(v);
     fill.style.height=(f*100)+'%';
@@ -1152,12 +1278,16 @@ function vslider(el,o){
     valEl.textContent=o.fmt(v);
     el.classList.toggle('locked',o.locked());
     lockb.textContent=o.locked()?'🔒':'🔓';
+    paintTicks();
     const mx=o.ceiling();
-    if(mx>0){ceil.classList.remove('hide');ceil.style.bottom=(frac(mx)*100)+'%';ceil.style.top='auto';}
-    else ceil.classList.add('hide');
+    if(mx>0){
+      ceil.classList.remove('hide');
+      ceil.style.bottom=(frac(mx)*100)+'%';
+      ceil.style.top='auto';
+      ceil.querySelector('.cv').textContent=o.ceilFmt(mx)+(o.unit||'');
+    }else ceil.classList.add('hide');
     if(maxIn!==document.activeElement)maxIn.value=mx>0?o.ceilFmt(mx):'';
     maxIn.disabled=!coilIsOff();
-    el.querySelector('.duty')&&(el.querySelector('.duty').textContent='');
   }
   function fromEvent(ev){
     const r=track.getBoundingClientRect();
@@ -1195,7 +1325,14 @@ function liveStage(){
   return 0;
 }
 const VSH=vslider($('#vsHz'),{
-  range:()=>({min:0,max:cfg.max.hz>0?cfg.max.hz:250}),log:false,
+  range:()=>({min:0,max:cfg.max.hz>0?cfg.max.hz:250}),log:false,unit:' Hz',
+  ticks:r=>{
+    const out=[],step=niceStep(r.max-r.min);
+    for(let v=step/2;v<r.max;v+=step/2){
+      const maj=Math.abs(v/step-Math.round(v/step))<1e-6;
+      out.push({v,maj,label:maj?fmtHzV(v):null});
+    }
+    return out;},
   get:curHz,set:v=>{cfg.run.stages[liveStage()].hz=v;},
   snap:v=>clamp(Math.round(v*10)/10,0,250),
   stepBy:v=>v>=100?1:0.1,
@@ -1209,7 +1346,14 @@ const VSP=vslider($('#vsPw'),{
   range:()=>{
     const hz=curHz(),per=hz>0.05?1e6/hz:500000;
     return{min:1,max:Math.min(cfg.max.pw>0?cfg.max.pw:per,per,500000)};},
-  log:true,
+  log:true,unit:' µs',
+  ticks:r=>{
+    const out=[],lab=us=>us<1000?us+'µ':us<1e6?(us/1000)+'m':'1s';
+    for(let d=1;d<=1e6;d*=10){
+      if(d>r.min&&d<r.max)out.push({v:d,maj:true,label:lab(d)});
+      for(const m of[2,5]){const v=d*m;if(v>r.min&&v<r.max)out.push({v,maj:false});}
+    }
+    return out;},
   get:curPw,set:v=>{cfg.run.stages[liveStage()].pw=v;},
   snap:v=>clamp(Math.round(v),1,500000),
   stepBy:v=>v>=20000?1000:v>=2000?100:v>=200?10:1,
@@ -1258,17 +1402,23 @@ $('#stagesOn').addEventListener('change',()=>{
 function mmss(sec){const m=Math.floor(sec/60),s=Math.round(sec%60);return m+':'+String(s).padStart(2,'0');}
 function parseMmss(t){const m=String(t).trim().match(/^(\d+)(?::([0-5]?\d))?$/);
   return m?Number(m[1])*60+(m[2]?Number(m[2]):0):null;}
+function stageName(i){const s=cfg.run.stages[i];return s.name||('Stage '+(i+1));}
 function fillStages(){
   const host=$('#stageRows');
   if(!host.childElementCount){
-    let h='';
+    let h='<div class="stghead"><span></span><span>Hz</span><span>pulse µs</span><span>mm:ss</span></div>';
     for(let i=0;i<5;i++){
       h+='<div class="stg" data-i="'+i+'">'+
-        '<label class="flex" style="justify-content:center"><input type="checkbox" class="onbox"></label>'+
-        '<input class="num" type="number" min="0" max="250" step="0.1" data-k="hz">'+
-        '<input class="num" type="number" min="1" step="1" data-k="pw">'+
-        '<input class="num" type="text" inputmode="numeric" data-k="sec" placeholder="open">'+
-        '<input type="color" data-k="col">'+
+        '<div class="stgtop">'+
+          '<label class="flex" style="justify-content:center"><input type="checkbox" class="onbox"></label>'+
+          '<input class="nm" type="text" maxlength="20" data-k="name" placeholder="Stage '+(i+1)+'">'+
+          '<input type="color" data-k="col">'+
+        '</div>'+
+        '<div class="stgnums"><span></span>'+
+          '<input class="num" type="number" min="0" max="250" step="0.1" data-k="hz">'+
+          '<input class="num" type="number" min="1" step="1" data-k="pw">'+
+          '<input class="num" type="text" inputmode="numeric" data-k="sec" placeholder="open">'+
+        '</div>'+
       '</div>';
     }
     host.innerHTML=h;
@@ -1280,24 +1430,24 @@ function fillStages(){
         if(k==='hz')s.hz=clamp(Math.round((Number(e.target.value)||0)*10)/10,0,250);
         else if(k==='pw')s.pw=clamp(Math.round(Number(e.target.value)||1),1,500000);
         else if(k==='sec'){const v=parseMmss(e.target.value);s.sec=v===null?0:clamp(v,0,21600);}
-        else if(k==='col')s.col=e.target.value;}
+        else if(k==='col')s.col=e.target.value;
+        else if(k==='name')s.name=e.target.value.trim().slice(0,20);}
       if(cfg.max.hz>0)s.hz=Math.min(s.hz,cfg.max.hz);
       if(cfg.max.pw>0)s.pw=Math.min(s.pw,cfg.max.pw);
       fillStages();touch();slidersPaint();});
   }
   for(let i=0;i<5;i++){
-    const row=host.children[i],s=cfg.run.stages[i];
+    const row=host.children[i+1],s=cfg.run.stages[i];
     row.classList.toggle('offrow',!s.on);
     row.querySelector('.onbox').checked=s.on;
     const set=(k,v)=>{const el=row.querySelector('[data-k='+k+']');if(el!==document.activeElement)el.value=v;};
-    set('hz',s.hz);set('pw',s.pw);set('sec',s.sec>0?mmss(s.sec):'');set('col',s.col);
-    row.querySelector('.n')||row.firstChild.insertAdjacentHTML('beforebegin','');
+    set('hz',s.hz);set('pw',s.pw);set('sec',s.sec>0?mmss(s.sec):'');set('col',s.col);set('name',s.name||'');
   }
   // repeat selects
   const en=[];for(let i=0;i<5;i++)if(cfg.run.stages[i].on)en.push(i);
   const mkOpts=(sel,vals,cur,none)=>{
     sel.innerHTML=(none?'<option value="-1">'+none+'</option>':'')+
-      vals.map(v=>'<option value="'+v+'">'+(typeof v==='number'&&none?('stage '+(v+1)):v)+'</option>').join('');
+      vals.map(v=>'<option value="'+v+'">'+(typeof v==='number'&&none?stageName(v):v)+'</option>').join('');
     sel.value=String(cur);if(sel.selectedIndex<0)sel.selectedIndex=0;};
   mkOpts($('#repFrom'),en,cfg.run.rFrom,'off');
   mkOpts($('#repTo'),en,cfg.run.rTo,'—');
@@ -1396,27 +1546,53 @@ function coilModelCached(){
   }
   return MCACHE.m;
 }
+const LAYER_COLS=['#5aa9ff','#49e0b8','#b388ff','#ffd166','#ff8fa3','#7dd3fc'];
+function layerColor(i){return LAYER_COLS[i%LAYER_COLS.length];}
+function fillLayers(){
+  const host=$('#layList'),C=cfg.coil;
+  host.innerHTML='';
+  C.layers.forEach((l,i)=>{
+    const row=document.createElement('div');
+    row.className='lay';
+    row.innerHTML='<span class="sw" style="background:'+layerColor(i)+'"></span>'+
+      '<input class="num" type="number" min="1" max="400" step="1" value="'+l.t+'">'+
+      '<select class="txt">'+AWGS.map(a=>'<option value="'+a+'"'+(a===l.awg?' selected':'')+'>AWG '+a+' ('+AWG[a][0]+' mm)</option>').join('')+'</select>'+
+      '<button class="rm" title="Remove layer"'+(C.layers.length<2?' disabled':'')+'>✕</button>';
+    row.querySelector('input').addEventListener('change',e=>{
+      l.t=clamp(Math.round(Number(e.target.value)||1),1,400);coilRecalc();touch();});
+    row.querySelector('select').addEventListener('change',e=>{
+      l.awg=Number(e.target.value);coilRecalc();touch();});
+    row.querySelector('.rm').onclick=()=>{
+      if(C.layers.length<2)return;
+      C.layers.splice(i,1);fillLayers();coilRecalc();touch();};
+    host.appendChild(row);
+  });
+  $('#layAdd').disabled=C.layers.length>=LAYER_MAX;
+}
+$('#layAdd').onclick=()=>{
+  if(cfg.coil.layers.length>=LAYER_MAX)return;
+  const last=cfg.coil.layers[cfg.coil.layers.length-1];
+  cfg.coil.layers.push({t:last.t,awg:last.awg});
+  fillLayers();coilRecalc();touch();};
 function fillCoilInputs(){
   const C=cfg.coil;
-  for(const sel of['c_l1awg','c_l2awg']){
-    const el=$('#'+sel);
-    if(!el.childElementCount)el.innerHTML=AWGS.map(a=>'<option value="'+a+'">AWG '+a+' ('+AWG[a][0]+' mm)</option>').join('');
-  }
+  fillLayers();
   const set=(id,v)=>{const el=$('#'+id);if(el!==document.activeElement)el.value=v;};
-  set('c_l1t',C.l1t);set('c_l1awg',C.l1awg);set('c_l2t',C.l2t);set('c_l2awg',C.l2awg);
-  set('c_rin',C.rin);set('c_ins',C.ins);set('c_v',C.v);set('c_luh',C.luh);set('c_rm',C.rm);
+  set('c_rin',C.rin);set('c_ry',C.ry);set('c_ins',C.ins);set('c_v',C.v);set('c_luh',C.luh);set('c_rm',C.rm);
   set('c_rds',C.rds);set('c_vf',C.vf);
+  $('#c_sameW').checked=C.sameW;
   $('#c_washer').checked=C.washer;
+  $('#ellNote').classList.toggle('hide',C.ry>=C.rin-1e-6);
   $('#depthSlider').value=C.depth;$('#depthVal').textContent=fmt(C.depth,1)+' cm';
 }
-const COIL_KEYS={c_l1t:['l1t',1,200,1],c_l2t:['l2t',0,200,1],c_rin:['rin',0.1,20,0.1],c_ins:['ins',0,2,0.05],
-  c_v:['v',1,60,0.5],c_luh:['luh',0,100000,0.1],c_rm:['rm',0,100000,1],c_rds:['rds',0,1000,1],c_vf:['vf',0,3,0.05]};
+const COIL_KEYS={c_rin:['rin',0.1,20,0.05],c_ry:['ry',0.1,20,0.05],c_ins:['ins',0,2,0.05],
+  c_v:['v',1,60,0.5],c_luh:['luh',0,100000,0.1],c_rm:['rm',0,100000,1],c_rds:['rds',0,1000,1],c_vf:['vf',0.2,100,0.5]};
 for(const id in COIL_KEYS)$('#'+id).addEventListener('change',e=>{
   const[k,lo,hi]=COIL_KEYS[id];
   cfg.coil[k]=clamp(Number(e.target.value)||0,lo,hi);
-  coilRecalc();touch();});
-$('#c_l1awg').addEventListener('change',e=>{cfg.coil.l1awg=Number(e.target.value);coilRecalc();touch();});
-$('#c_l2awg').addEventListener('change',e=>{cfg.coil.l2awg=Number(e.target.value);coilRecalc();touch();});
+  if(cfg.coil.ry>cfg.coil.rin)cfg.coil.ry=cfg.coil.rin;      // major axis stays the major axis
+  fillCoilInputs();coilRecalc();touch();});
+$('#c_sameW').addEventListener('change',e=>{cfg.coil.sameW=e.target.checked;coilRecalc();touch();});
 $('#c_washer').addEventListener('change',e=>{cfg.coil.washer=e.target.checked;coilRecalc();touch();});
 $('#depthSlider').addEventListener('input',e=>{
   cfg.coil.depth=Number(e.target.value);
@@ -1437,7 +1613,8 @@ function coilRecalc(){
   $('#coilTiles').innerHTML=
     tileHtml('L estimate',fmt(M.Lest*1e6,1),'µH',C.luh>0?'using measured '+fmt(C.luh,1):'from geometry')+
     tileHtml('R estimate',fmt(M.Rest*1000,0),'mΩ',C.rm>0?'using measured '+fmt(C.rm,0):'coil only')+
-    tileHtml('Wire length',fmt(M.wireM,1),'m','outer r '+fmt(M.outer*100,1)+' cm')+
+    tileHtml('Wire length',fmt(M.wireM,1),'m','⌀ '+fmt(M.outer*200,1)+
+      (C.ry<C.rin-1e-6?' × '+fmt(M.outer*(C.ry/C.rin)*200,1):'')+' cm')+
     tileHtml('Peak current',fmt(M.pulse.peak,M.pulse.peak>=10?1:2),'A','τ '+fmt(M.pulse.tau*1e6,0)+' µs')+
     tileHtml('Avg / RMS current',fmt(M.pulse.avg,2)+' / '+fmt(M.pulse.rms,2),'A','')+
     tileHtml('dI/dt on / off',fmt(M.pulse.didtOn/1000,0)+' / '+fmt(Math.abs(M.pulse.didtOff)/1000,0),'kA/s','ideal edges')+
@@ -1471,56 +1648,117 @@ function coilRecalc(){
     x0:0,x1:M.per/1000,xu:'ms',zero:true,noSmooth:true});
   fillFormulas();
 }
-/* a cross-section with real proportions, plus dimensions */
+/* The coil, drawn twice: a face-on view of the surface (left) and a cross-section through the
+   axis (right). Elliptical coils keep their real aspect in the face view; the cross-section is cut
+   along the major axis. Layer colors match the Windings list. */
 function coilViz(){
   const C=cfg.coil,M=coilModelCached();
   if(!M)return;
   const svg=$('#coilViz');
-  const W=560,H=240,cx=W/2;
+  const W=560,H=286;
   svg.setAttribute('viewBox','0 0 '+W+' '+H);
-  const rout=M.outer,rin=C.rin/100;
-  const sc=490/(rout*2);                       // px per meter: the coil fills the width
-  const w1=(AWG[C.l1awg][0]+2*C.ins)/1000,w2=(AWG[C.l2awg][0]+2*C.ins)/1000;
-  const faceY=140;
-  let s='';
-  const mut=cssVar('--mut'),acc=cssVar('--acc'),acc2=cssVar('--acc2'),warn=cssVar('--warn'),line=cssVar('--line2'),bad=cssVar('--bad');
-  // body/face slab
-  s+='<rect x="'+(cx-rout*sc-14)+'" y="'+faceY+'" width="'+(rout*sc*2+28)+'" height="8" rx="3" fill="'+line+'"/>';
-  // washer
-  if(C.washer)s+='<rect x="'+(cx-rin*sc)+'" y="'+(faceY-9)+'" width="'+(rin*sc*2)+'" height="9" fill="'+warn+'" opacity=".8" rx="2"/>';
-  // turns: layer 1 bottom row, layer 2 above
-  const dot=(r,y,d,col)=>{const px=Math.max(d*sc,2.6);
-    return'<circle cx="'+(cx-r*sc)+'" cy="'+y+'" r="'+px/2+'" fill="'+col+'"/>'+
-           '<circle cx="'+(cx+r*sc)+'" cy="'+y+'" r="'+px/2+'" fill="'+col+'"/>';};
-  let y1=faceY-w1*sc/2;
-  for(let i=0;i<C.l1t;i++)s+=dot(rin+(i+0.5)*w1,y1,w1*0.92,acc);
-  let y2=faceY-w1*sc-w2*sc/2;
-  for(let i=0;i<C.l2t;i++)s+=dot(rin+(i+0.5)*w2,y2,w2*0.92,acc2);
-  // sensors: center + perimeter below the face
-  s+='<circle cx="'+cx+'" cy="'+(faceY+14)+'" r="4.5" fill="'+bad+'"/>'+
-     '<text x="'+(cx+8)+'" y="'+(faceY+18)+'" class="dim">49E center</text>';
-  s+='<circle cx="'+(cx+rout*sc)+'" cy="'+(faceY+14)+'" r="4.5" fill="'+bad+'"/>'+
-     '<text x="'+(cx+rout*sc-4)+'" y="'+(faceY+30)+'" class="dim" text-anchor="end">49E perimeter</text>';
-  // coil LED on the rim
-  s+='<circle cx="'+(cx-rout*sc-6)+'" cy="'+(faceY-8)+'" r="4" fill="'+warn+'"/>'+
-     '<text x="'+(cx-rout*sc-2)+'" y="'+(faceY-16)+'" class="dim">LED</text>';
-  // dimension: outer diameter
-  const dimY=faceY+46;
-  s+='<line x1="'+(cx-rout*sc)+'" y1="'+dimY+'" x2="'+(cx+rout*sc)+'" y2="'+dimY+'" stroke="'+mut+'" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>'+
-     '<text x="'+cx+'" y="'+(dimY+14)+'" class="dim" text-anchor="middle">⌀ '+fmt(rout*200,1)+' cm</text>';
-  // dimension: open center
-  s+='<line x1="'+(cx-rin*sc)+'" y1="'+(faceY-28-w1*sc-w2*sc)+'" x2="'+(cx+rin*sc)+'" y2="'+(faceY-28-w1*sc-w2*sc)+'" stroke="'+mut+'" stroke-width="1"/>'+
-     '<text x="'+cx+'" y="'+(faceY-34-w1*sc-w2*sc)+'" class="dim" text-anchor="middle">center ⌀ '+fmt(rin*200,1)+' cm</text>';
-  // depth arrow
-  const dz=Math.min(C.depth/100*sc,86);
-  s+='<line x1="'+cx+'" y1="'+(faceY+8)+'" x2="'+cx+'" y2="'+(faceY+8+dz)+'" stroke="'+acc2+'" stroke-width="1.5" stroke-dasharray="4 3"/>'+
-     '<text x="'+(cx+6)+'" y="'+(faceY+10+dz)+'" class="dim" fill="'+acc2+'">target '+fmt(C.depth,1)+' cm</text>';
-  // legend, top-left so it never collides with the drawing
-  s+='<circle cx="14" cy="14" r="4" fill="'+acc+'"/><text x="24" y="18" class="dim">Layer 1: '+C.l1t+'× AWG '+C.l1awg+'</text>';
-  if(C.l2t>0)s+='<circle cx="14" cy="30" r="4" fill="'+acc2+'"/><text x="24" y="34" class="dim">Layer 2: '+C.l2t+'× AWG '+C.l2awg+'</text>';
-  if(C.washer)s+='<rect x="10" y="42" width="9" height="6" fill="'+warn+'" rx="1"/><text x="24" y="49" class="dim">washer</text>';
-  svg.innerHTML='<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">'+
-    '<path d="M1 1 L7 4 L1 7 z" fill="'+mut+'"/></marker></defs>'+s;
+  const mut=cssVar('--mut'),warn=cssVar('--warn'),line=cssVar('--line2'),bad=cssVar('--bad'),
+    card2=cssVar('--card2'),ink=cssVar('--ink');
+  const routM=M.outer,rin=C.rin/100;
+  const k=clamp((C.ry||C.rin)/C.rin,0.05,1);
+  const span=routM-rin;
+  let s='<defs>'+
+    '<marker id="ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7 z" fill="'+mut+'"/></marker>'+
+    '<radialGradient id="sheen" cx="0.35" cy="0.3" r="0.9">'+
+    '<stop offset="0" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.55" stop-color="#fff" stop-opacity="0.05"/>'+
+    '<stop offset="1" stop-color="#000" stop-opacity="0.12"/></radialGradient>'+
+    '<radialGradient id="wash" cx="0.4" cy="0.35" r="0.9">'+
+    '<stop offset="0" stop-color="#ffd98a"/><stop offset="1" stop-color="#c8872f"/></radialGradient>'+
+    '</defs>';
+
+  /* ---- face-on view, left ---- */
+  const fx=138,fy=124,fs=102/routM;                 // px per meter
+  const RX=r=>r*fs,RY=r=>r*fs*k;
+  // shadow + body
+  s+='<ellipse cx="'+(fx+3)+'" cy="'+(fy+5)+'" rx="'+(RX(routM)+6)+'" ry="'+(RY(routM)+6)+'" fill="#000" opacity="0.18"/>';
+  s+='<ellipse cx="'+fx+'" cy="'+fy+'" rx="'+(RX(routM)+5)+'" ry="'+(RY(routM)+5)+'" fill="'+line+'"/>';
+  // winding band: concentric turns, braided with the layer colors
+  const nTot=C.layers.reduce((a,l)=>a+l.t,0);
+  const nd=clamp(Math.round(span*fs/4),8,26);       // rings we can draw distinctly
+  const rw=span*fs/nd;
+  for(let i=0;i<nd;i++){
+    const r=rin+(i+0.5)*span/nd;
+    const col=layerColor(C.layers.length>1?i%C.layers.length:0);
+    s+='<ellipse cx="'+fx+'" cy="'+fy+'" rx="'+RX(r)+'" ry="'+RY(r)+'" fill="none" stroke="'+col+'" stroke-width="'+(rw*0.74)+'" opacity="0.95"/>';
+  }
+  // open center + washer (washers are round even on an elliptical coil)
+  s+='<ellipse cx="'+fx+'" cy="'+fy+'" rx="'+RX(rin)+'" ry="'+RY(rin)+'" fill="'+card2+'"/>';
+  if(C.washer){
+    const wr=Math.min(RX(rin),RY(rin))*0.82;
+    s+='<circle cx="'+fx+'" cy="'+fy+'" r="'+wr+'" fill="url(#wash)"/>'+
+       '<circle cx="'+fx+'" cy="'+fy+'" r="'+(wr*0.34)+'" fill="'+card2+'"/>';
+  }
+  // sheen over the whole face
+  s+='<ellipse cx="'+fx+'" cy="'+fy+'" rx="'+(RX(routM)+5)+'" ry="'+(RY(routM)+5)+'" fill="url(#sheen)"/>';
+  // sensors + LED on the face
+  s+='<circle cx="'+fx+'" cy="'+fy+'" r="4" fill="'+bad+'" stroke="'+card2+'" stroke-width="1.2"/>';
+  s+='<circle cx="'+(fx+RX(routM))+'" cy="'+fy+'" r="4" fill="'+bad+'" stroke="'+card2+'" stroke-width="1.2"/>';
+  const la=Math.PI*0.75;
+  s+='<circle cx="'+(fx+RX(routM)*Math.cos(la))+'" cy="'+(fy-RY(routM)*Math.sin(la))+'" r="4" fill="'+warn+'" stroke="'+card2+'" stroke-width="1.2"/>';
+  // dimensions: major below, minor at right
+  const dmy=fy+RY(routM)+22;
+  s+='<line x1="'+(fx-RX(routM))+'" y1="'+dmy+'" x2="'+(fx+RX(routM))+'" y2="'+dmy+'" stroke="'+mut+'" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>'+
+     '<text x="'+fx+'" y="'+(dmy+13)+'" class="dim" text-anchor="middle">⌀ '+fmt(routM*200,1)+' cm'+(k<0.999?' major':'')+'</text>';
+  if(k<0.999){
+    const dmx=fx+RX(routM)+16;
+    s+='<line x1="'+dmx+'" y1="'+(fy-RY(routM))+'" x2="'+dmx+'" y2="'+(fy+RY(routM))+'" stroke="'+mut+'" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>'+
+       '<text x="'+(dmx+5)+'" y="'+fy+'" class="dim">⌀ '+fmt(routM*k*200,1)+'</text>';
+  }
+
+  /* ---- cross-section along the major axis, right ---- */
+  const sx=415,faceY=150;
+  const ss=128/routM;                                // px per meter, half-width 128
+  // z is exaggerated so each layer's wire stays visible
+  const heights=C.layers.map(l=>Math.max(wireOd(C,l)*ss,6));
+  const totH=heights.reduce((a,b)=>a+b,0);
+  // face slab
+  s+='<rect x="'+(sx-routM*ss-12)+'" y="'+faceY+'" width="'+(routM*ss*2+24)+'" height="9" rx="3.5" fill="'+line+'"/>'+
+     '<rect x="'+(sx-routM*ss-12)+'" y="'+faceY+'" width="'+(routM*ss*2+24)+'" height="3.5" rx="1.75" fill="#fff" opacity="0.14"/>';
+  if(C.washer)s+='<rect x="'+(sx-rin*ss*0.82)+'" y="'+(faceY-5)+'" width="'+(rin*ss*1.64)+'" height="5" fill="url(#wash)" rx="1.5"/>';
+  // turns, layer by layer from the face up
+  let zTop=C.washer?5:0;
+  C.layers.forEach((l,li)=>{
+    const h=heights[li],col=layerColor(li);
+    const pitch=(C.sameW?span/l.t:wireOd(C,l))*ss;
+    const rr=Math.min(h,Math.max(pitch*0.86,4))/2;
+    const y=faceY-zTop-h/2;
+    for(let i=0;i<l.t;i++){
+      const x=(rin+ (i+0.5)*(C.sameW?span/l.t:wireOd(C,l)))*ss;
+      s+='<circle cx="'+(sx-x)+'" cy="'+y+'" r="'+rr+'" fill="'+col+'" stroke="#000" stroke-opacity="0.25" stroke-width="0.6"/>'+
+         '<circle cx="'+(sx+x)+'" cy="'+y+'" r="'+rr+'" fill="'+col+'" stroke="#000" stroke-opacity="0.25" stroke-width="0.6"/>';
+    }
+    zTop+=h;
+  });
+  // axis + sensors below the face
+  s+='<line x1="'+sx+'" y1="'+(faceY-totH-16)+'" x2="'+sx+'" y2="'+(faceY+34)+'" stroke="'+mut+'" stroke-width="0.7" stroke-dasharray="2 4" opacity="0.6"/>';
+  s+='<circle cx="'+sx+'" cy="'+(faceY+16)+'" r="4.5" fill="'+bad+'"/>'+
+     '<text x="'+(sx+8)+'" y="'+(faceY+20)+'" class="dim">49E center</text>';
+  s+='<circle cx="'+(sx+routM*ss)+'" cy="'+(faceY+16)+'" r="4.5" fill="'+bad+'"/>'+
+     '<text x="'+(sx+routM*ss-2)+'" y="'+(faceY+32)+'" class="dim" text-anchor="end">49E perimeter</text>';
+  s+='<circle cx="'+(sx-routM*ss-8)+'" cy="'+(faceY-6)+'" r="4" fill="'+warn+'"/>'+
+     '<text x="'+(sx-routM*ss-4)+'" y="'+(faceY-14)+'" class="dim">LED</text>';
+  // open-center dimension above the stack
+  s+='<line x1="'+(sx-rin*ss)+'" y1="'+(faceY-totH-10)+'" x2="'+(sx+rin*ss)+'" y2="'+(faceY-totH-10)+'" stroke="'+mut+'" stroke-width="1"/>'+
+     '<text x="'+sx+'" y="'+(faceY-totH-16)+'" class="dim" text-anchor="middle">center ⌀ '+fmt(rin*200,1)+' cm</text>';
+  // target-depth arrow
+  const dz=Math.min(C.depth/100*ss,72);
+  s+='<line x1="'+(sx+14)+'" y1="'+(faceY+9)+'" x2="'+(sx+14)+'" y2="'+(faceY+9+dz)+'" stroke="'+cssVar('--acc2')+'" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar)"/>'+
+     '<text x="'+(sx+20)+'" y="'+(faceY+12+dz)+'" class="dim" fill="'+cssVar('--acc2')+'">'+fmt(C.depth,1)+' cm</text>';
+  // legend, top-left
+  C.layers.forEach((l,li)=>{
+    s+='<circle cx="14" cy="'+(14+li*15)+'" r="4" fill="'+layerColor(li)+'"/>'+
+       '<text x="24" y="'+(18+li*15)+'" class="dim">Layer '+(li+1)+': '+l.t+'× AWG '+l.awg+'</text>';
+  });
+  let ly=14+C.layers.length*15;
+  if(C.washer)s+='<rect x="10" y="'+(ly-4)+'" width="9" height="6" fill="url(#wash)" rx="1"/><text x="24" y="'+(ly+2)+'" class="dim">washer</text>';
+  s+='<text x="'+fx+'" y="'+(H-6)+'" class="dim" text-anchor="middle" opacity="0.8">face view</text>'+
+     '<text x="'+sx+'" y="'+(H-6)+'" class="dim" text-anchor="middle" opacity="0.8">section, major axis · '+nTot+' turns · z exaggerated</text>';
+  svg.innerHTML=s;
 }
 
 /* formulas, MathML (renders natively in Safari and modern browsers) */
@@ -1660,6 +1898,28 @@ function renderMeasure(){
   put('sMax0',fmtUT(s.bm0));put('sMax1',fmtUT(s.bm1));
   $('#sDbm').innerHTML=fmt(s.dbm,s.dbm>=100?0:1)+'<small>mT/s</small>';
   put('sAvg0',fmtUT(s.ba0));put('sAvg1',fmtUT(s.ba1));put('sRms',fmtUT(s.brms));
+  // thermal card: live values, limits, and the rolling two-trace chart
+  tempTile($('#mTileTc'),$('#mTc'),$('#mTcS'),s.tc,s.okc,s.dc,cfg.safe.coilMax);
+  tempTile($('#mTileTf'),$('#mTf'),$('#mTfS'),s.tf,s.okf,s.dfr,cfg.safe.fetMax);
+  $('#mTcLim').innerHTML=fmt(degOut(cfg.safe.coilMax),0)+'<small>'+degSym()+'</small>';
+  $('#mTfLim').innerHTML=fmt(degOut(cfg.safe.fetMax),0)+'<small>'+degSym()+'</small>';
+  $('#mTcHead').textContent=s.okc?fmt(degOut(cfg.safe.coilMax)-degOut(s.tc),1)+degSym()+' of headroom':'no probe';
+  $('#mTfHead').textContent=s.okf?fmt(degOut(cfg.safe.fetMax)-degOut(s.tf),1)+degSym()+' of headroom':'no probe';
+  if(TEMPHIST.length>1){
+    const now=Date.now(),win=10*60*1000;
+    const pts=TEMPHIST.filter(p=>now-p.at<=win);
+    if(pts.length>1){
+      const tc=pts.map(p=>Number.isFinite(p.tc)?degOut(p.tc):NaN);
+      const tf=pts.map(p=>Number.isFinite(p.tf)?degOut(p.tf):NaN);
+      const span=(now-pts[0].at)/60000;
+      drawChart($('#chTherm'),{n:pts.length,
+        series:[{ys:tc,color:cssVar('--acc'),width:2},{ys:tf,color:cssVar('--acc2'),width:2}],
+        hlines:[{v:degOut(cfg.safe.coilMax),color:cssVar('--bad')},{v:degOut(cfg.safe.fetMax),color:cssVar('--warn')}],
+        x0:-span,x1:0,xu:'m'});
+      $('#thSpanTxt').textContent='last '+fmt(span,span<2?1:0)+' min';
+      $('#thermCap').textContent='coil (blue) · MOSFET (teal) · limits dashed · '+degSym();
+    }
+  }
   const M=coilModelCached();
   if(M&&M.sensCPerA>0){
     const k=M.depthPerA/M.sensCPerA;

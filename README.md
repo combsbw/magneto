@@ -17,7 +17,7 @@ The control panel is one web page, published two ways:
 
 | Function | Default pin | Notes |
 |---|---|---|
-| Coil drive | GPIO 7 | TC4420 → IRFB4410 low-side, 24 V coil rail. **HIGH = coil on**, idles LOW with a pulldown. Schottky flyback across the coil. |
+| Coil drive | GPIO 7 | TC4420 → IRFB4410 low-side, 24 V coil rail. **HIGH = coil on**, idles LOW with a pulldown. Flyback: 2× 1.5KE33CA TVS in parallel across the coil (≈33 V clamp). |
 | 49E hall, coil center | GPIO 1 | ADC1. Sensor fed from 3V3 (5 V would exceed the pin). |
 | 49E hall, coil perimeter | GPIO 2 | ADC1 |
 | 10k NTC, coil face | GPIO 3 | ADC1, 10k divider to 3V3 |
@@ -42,10 +42,12 @@ the defaults instead of bricking the board.
   decimated scope; a phase-folded pulse profile (sampling-scope style) with the RL model overlaid
   for the microsecond edges; a 4096-point Hann FFT with sub-bin peak, amplitude and SNR; and the
   measured field carried to the target depth through the coil model.
-- **Coil tab**: geometry editor (two pancake layers, AWG, open center, insulation) with a scaled
-  cross-section drawing, exact loop-sum field model (elliptic integrals), inductance estimate
+- **Coil tab**: geometry editor (up to six pancake layers with independent turns and AWG, shared
+  or per-layer width, circular or elliptical, open center, insulation) with a face-on view and a
+  scaled cross-section drawing, exact loop-sum field model (elliptic integrals), inductance estimate
   (self + Maxwell mutual), RL pulse prediction, induced-E/EMF at depth, and the formulas in MathML.
-  Measured L and R override the estimates.
+  Measured L and R override the estimates; elliptical turns are modeled as area-equivalent circles.
+  The TVS clamp voltage sets the flyback decay in the pulse model.
 - **Safety**: coil-face and MOSFET temperature limits plus dT/dt limits (defaults 110 °F / 140 °F /
   20 °F/min), °F/°C in the UI. A trip kills the coil, latches across reboots, and needs an explicit
   reset gated on a fresh in-range reading. Both the latch and the probe requirement are
