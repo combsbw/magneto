@@ -233,26 +233,30 @@ static void tlsPrepareBody() {
   mbedtls_pk_free(&ca);
 }
 
-static SemaphoreHandle_t certDone = nullptr;
+static volatile bool certReady = false;
+static volatile bool certBusy = false;
 
 static void certTask(void*) {
   tlsPrepareBody();
-  xSemaphoreGive(certDone);
+  certReady = true;
+  certBusy = false;
   vTaskDelete(nullptr);
 }
 
+// Starts the work and returns at once. Signing a fresh authority takes tens of seconds on a cold
+// board, and blocking setup() through it would leave the page unreachable for that whole time -
+// the web server has to be answering first. The caller starts the secure socket from loop() once
+// tlsCertReady() turns true.
 void tlsPrepare() {
-  certDone = xSemaphoreCreateBinary();
-  if (!certDone || xTaskCreate(certTask, "cert", 24576, nullptr, 1, nullptr) != pdPASS) {
+  if (certBusy || certReady) return;
+  certBusy = true;
+  if (xTaskCreate(certTask, "cert", 24576, nullptr, 1, nullptr) != pdPASS) {
+    certBusy = false;
     Serial.println("cert: skipped, not enough memory");
-    if (certDone) vSemaphoreDelete(certDone);
-    certDone = nullptr;
-    return;
   }
-  xSemaphoreTake(certDone, pdMS_TO_TICKS(60000));
-  vSemaphoreDelete(certDone);
-  certDone = nullptr;
 }
+
+bool tlsCertReady() { return certReady; }
 
 // ---- wss://<board>/ws: each text message is one request to the page's own API ------------------
 //

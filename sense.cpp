@@ -15,7 +15,6 @@ static const uint32_t kAdcTry[] = {80000, 60000, 40000, 20000};  // total conver
 static const int kDecim = 2;          // hall: raw conversions averaged into one processed sample
 static const int kDiffK = 4;          // dB/dt difference span, processed samples
 static const int FOLD_N = 240;        // phase-profile bins
-static const int FFT_N = 4096;
 static const int FFT_DECIM = 5;       // processed -> FFT stream (about 2 kHz at the 80 kHz ladder step)
 static const int SPEC_MAX = 256;
 static const float SPEC_HZ = 300.f;   // publish the spectrum up to here
@@ -75,6 +74,8 @@ static uint32_t sFoldLastCycle = 0;
 // FFT stream and published spectrum
 static float* sFftRing = nullptr;
 static uint32_t sFftCap = 0, sFftW = 0;
+static int sFftN = 2048;        // transform size, set from the memory budget
+static bool sPsram = false;
 static int sFftDecim = 0;
 static float sFftAcc = 0;
 static float sSpec[SPEC_MAX];
@@ -460,30 +461,31 @@ static void senseTask(void*) {
 
 // ---- FFT task ---------------------------------------------------------------------------------------------------------
 static void fftTask(void*) {
-  float* re = (float*)heap_caps_malloc(FFT_N * sizeof(float), MALLOC_CAP_SPIRAM);
-  float* im = (float*)heap_caps_malloc(FFT_N * sizeof(float), MALLOC_CAP_SPIRAM);
-  if (!re) re = (float*)malloc(FFT_N * sizeof(float));
-  if (!im) im = (float*)malloc(FFT_N * sizeof(float));
+  const int N = sFftN;
+  float* re = (float*)heap_caps_malloc(N * sizeof(float), MALLOC_CAP_SPIRAM);
+  float* im = (float*)heap_caps_malloc(N * sizeof(float), MALLOC_CAP_SPIRAM);
+  if (!re) re = (float*)malloc(N * sizeof(float));
+  if (!im) im = (float*)malloc(N * sizeof(float));
   if (!re || !im || !sFftRing) { Serial.println("sense: no memory for the FFT"); vTaskDelete(nullptr); return; }
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(600));
     if (sHold) continue;
     uint32_t w = sFftW;
-    if (w < (uint32_t)FFT_N) continue;
-    for (int i = 0; i < FFT_N; i++) re[i] = sFftRing[(w - FFT_N + i) % sFftCap];
-    if (sFftW - w > sFftCap - FFT_N) continue;      // lapped while copying; try again next pass
-    memset(im, 0, FFT_N * sizeof(float));
+    if (w < (uint32_t)N) continue;
+    for (int i = 0; i < N; i++) re[i] = sFftRing[(w - N + i) % sFftCap];
+    if (sFftW - w > sFftCap - N) continue;      // lapped while copying; try again next pass
+    memset(im, 0, N * sizeof(float));
     float fs = sProcHz / (float)FFT_DECIM;
     if (fs < 10.f) continue;
-    mg::fftRemoveDc(re, FFT_N);
-    mg::fftHann(re, FFT_N);
-    mg::fftRun(re, im, FFT_N);
-    int bins = FFT_N / 2;
-    float df = fs / (float)FFT_N;
+    mg::fftRemoveDc(re, N);
+    mg::fftHann(re, N);
+    mg::fftRun(re, im, N);
+    int bins = N / 2;
+    float df = fs / (float)N;
     // magnitudes in place, then the peak and the published (max-decimated) spectrum
     for (int i = 0; i < bins; i++) re[i] = sqrtf(re[i] * re[i] + im[i] * im[i]);
     mg::FftPeak pk;
-    bool got = mg::fftPeak(re, bins, df, 0.3f, SPEC_HZ, FFT_N, &pk);
+    bool got = mg::fftPeak(re, bins, df, 0.3f, SPEC_HZ, N, &pk);
     int want = (int)(SPEC_HZ / df);
     if (want > bins) want = bins;
     int outN = want > SPEC_MAX ? SPEC_MAX : want;
@@ -492,7 +494,7 @@ static void fftTask(void*) {
       int a = (int)((int64_t)o * want / outN), b = (int)((int64_t)(o + 1) * want / outN);
       float m = 0;
       for (int i = a; i < b && i < bins; i++) if (re[i] > m) m = re[i];
-      sSpec[o] = 4.f * m / (float)FFT_N;      // amplitude-corrected like the peak
+      sSpec[o] = 4.f * m / (float)N;      // amplitude-corrected like the peak
     }
     sSpecN = outN;
     sSpecDf = df * (float)want / (float)outN;
@@ -515,20 +517,25 @@ bool senseBegin(int hallC, int hallP, int thC, int thF) {
   sZeroed[0] = sPrefs.getBool("z0", false);
   sZeroed[1] = sPrefs.getBool("z1", false);
 
+  // Buffer budget. With PSRAM the scope keeps minutes of history and the FFT runs 4096 points.
+  // Without it every byte competes with Wi-Fi and the TLS server in internal RAM, so the rings
+  // shrink hard and the transform drops to 2048 points (still ~1 Hz resolution over a 1 s window).
+  sRing[0] = sRing[1] = nullptr;
   sRingCap = 65536;
-  for (int i = 0; i < 2; i++) {
-    sRing[i] = (float*)heap_caps_malloc(sRingCap * sizeof(float), MALLOC_CAP_SPIRAM);
+  for (int i = 0; i < 2; i++) sRing[i] = (float*)heap_caps_malloc(sRingCap * sizeof(float), MALLOC_CAP_SPIRAM);
+  sPsram = sRing[0] && sRing[1];
+  if (!sPsram) {
+    for (int i = 0; i < 2; i++) { free(sRing[i]); sRing[i] = nullptr; }
+    sRingCap = 3072;
+    for (int i = 0; i < 2; i++) sRing[i] = (float*)malloc(sRingCap * sizeof(float));
   }
-  if (!sRing[0] || !sRing[1]) {
-    sRingCap = 8192;
-    for (int i = 0; i < 2; i++) {
-      if (!sRing[i]) sRing[i] = (float*)malloc(sRingCap * sizeof(float));
-    }
-  }
-  sFftCap = 8192;
+  sFftN = sPsram ? 4096 : 2048;
+  sFftCap = sPsram ? 8192 : 2048;
   sFftRing = (float*)heap_caps_malloc(sFftCap * sizeof(float), MALLOC_CAP_SPIRAM);
   if (!sFftRing) sFftRing = (float*)malloc(sFftCap * sizeof(float));
   memset(sFold, 0, sizeof sFold);
+  Serial.printf("sense: %s - scope %u samples/channel, FFT %d points\n",
+                sPsram ? "PSRAM" : "internal RAM only", (unsigned)sRingCap, sFftN);
 
   if (!adcStart()) { /* the task keeps retrying */ }
   xTaskCreatePinnedToCore(senseTask, "sense", 8192, nullptr, 4, &sTask, 0);
@@ -614,6 +621,9 @@ int senseFold(float* out, int maxBins, uint32_t* perUs, uint32_t* cycles) {
   if (cycles) *cycles = sFoldCycles;
   return n;
 }
+
+bool sensePsram() { return sPsram; }
+int senseFftPoints() { return sFftN; }
 
 void senseHold(bool hold) {
   sHold = hold;

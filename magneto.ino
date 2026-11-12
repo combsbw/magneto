@@ -207,7 +207,7 @@ static int stateJson(char* buf, size_t cap) {
   int n = snprintf(buf, cap,
     "{\"app\":\"magneto\",\"ver\":\"%s\",\"s\":\"%s\",\"t\":%.2f,\"total\":%.1f,\"stage\":%d,\"nwin\":%d,"
     "\"hz\":%.1f,\"pw\":%.0f,\"duty\":%.5f,\"trip\":%d,\"rev\":%lu,\"ota\":%d,\"up\":%lu,\"net\":\"%s\",\"fail\":%d,"
-    "\"rst\":\"%s\",\"bo\":%lu,\"heap\":%lu,\"rssi\":%d,"
+    "\"rst\":\"%s\",\"bo\":%lu,\"heap\":%lu,\"rssi\":%d,\"ps\":%d,\"fftn\":%d,"
     "\"b0\":%.2f,\"b1\":%.2f,\"db\":%.3f,\"bm0\":%.2f,\"bm1\":%.2f,\"dbm\":%.3f,"
     "\"ba0\":%.2f,\"ba1\":%.2f,\"brms\":%.2f,\"ss\":%.1f,\"f\":%.2f,\"fa\":%.2f,\"snr\":%.1f,"
     "\"z0\":%d,\"z1\":%d,\"clip\":%d,\"fs\":%.0f,"
@@ -216,6 +216,7 @@ static int stateJson(char* buf, size_t cap) {
     hz, pw, mg::dutyOf(hz, pw) * 100.0, (int)eng.trip, (unsigned long)cfgRev, otaBusy ? 1 : 0,
     (unsigned long)(millis() / 1000), radioSta ? "sta" : "ap", staFailed ? 1 : 0,
     rstName, (unsigned long)boCount, (unsigned long)ESP.getFreeHeap(), radioSta ? (int)WiFi.RSSI() : 0,
+    sensePsram() ? 1 : 0, senseFftPoints(),
     s.b0, s.b1, s.db, s.bMax0, s.bMax1, s.dbMax,
     s.bAvg0, s.bAvg1, s.bRms0, s.statSec, s.pkHz, s.pkAmp, s.pkSnr,
     s.zeroed0 ? 1 : 0, s.zeroed1 ? 1 : 0, s.clip ? 1 : 0, s.fs,
@@ -225,7 +226,7 @@ static int stateJson(char* buf, size_t cap) {
 }
 
 static void sendState() {
-  char buf[1000];
+  char buf[1100];
   lastApiMs = millis();
   if (stateJson(buf, sizeof buf) < 0) { sendJson(500, "{\"ok\":false}"); return; }
   sendJson(200, buf);
@@ -934,7 +935,6 @@ void setup() {
   }
   if (!radioSta) startAp();
   else if (MDNS.begin(HOST_NAME)) MDNS.addService("http", "tcp", 80);
-  if (fsOk) tlsPrepare();
   mdnsPokeAt = millis() + MDNS_POKE_MS;
 
   server.on("/", HTTP_GET, handleRoot);
@@ -967,7 +967,7 @@ void setup() {
   server.onNotFound(handleNotFound);
   server.begin();
   tlsRoutes(nullptr, 0);
-  if (tlsStart() && radioSta) MDNS.addService("wss", "tcp", 443);
+  if (fsOk) tlsPrepare();          // runs on its own task; loop() starts the socket when it lands
 
   ArduinoOTA.setHostname(HOST_NAME);
   ArduinoOTA.setPort(OTA_PORT);
@@ -992,6 +992,9 @@ void loop() {
     gotIpFlag = false;
     mdnsPokeAt = millis() + MDNS_POKE_MS;
     mdnsPoke();
+  }
+  if (!tlsRunning() && tlsCertReady() && !otaBusy && !updPhase) {
+    if (tlsStart() && radioSta) MDNS.addService("wss", "tcp", 443);
   }
   if (updStartAt && (int32_t)(millis() - updStartAt) >= 0) { updStartAt = 0; runWebUpdate(); }
   if (cfgDirty && millis() - cfgDirtyAt > 2000) cfgSaveNow();

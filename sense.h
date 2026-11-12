@@ -62,3 +62,7 @@ int senseSpec(float* out, int maxBins, float* dfOut);
 int senseFold(float* out, int maxBins, uint32_t* perUs, uint32_t* cycles);
 
 void senseHold(bool hold);        // park the ADC and FFT for a firmware update
+
+// How the pipeline was sized at boot (PSRAM present = long scope history and a 4096-point FFT).
+bool sensePsram();
+int senseFftPoints();

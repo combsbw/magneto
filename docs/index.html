@@ -693,6 +693,7 @@ $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b
   $$('.tabpanel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+TAB));
   if(TAB==='coil')coilRecalc();
   if(TAB==='measure')measureKick();
+  if(TAB==='set'){renderUpdateCard();renderDevice();if(DEV.on&&!NET)netRefresh();}
 });
 
 /* ================= transport =================
@@ -743,7 +744,7 @@ async function connectNow(){
   WS.trying=false;connectBusy=false;connRender();
 }
 
-function api(path,opt){
+function apiRaw(path,opt){
   opt=opt||{};
   if(ONDEV){
     return fetch(path,{method:opt.method||'GET',headers:opt.form?{'Content-Type':'application/x-www-form-urlencoded'}:(opt.body!=null?{'Content-Type':'text/plain'}:undefined),body:opt.body})
@@ -759,6 +760,15 @@ function api(path,opt){
     setTimeout(()=>{if(WS.wait.has(id)){WS.wait.delete(id);rej(new Error('timeout'));}},12000);
     WS.sock.send(id+' '+(opt.method||'GET')+' '+path+(opt.form?' f':'')+'\n'+(opt.body==null?'':String(opt.body)));
   });
+}
+// The board's web server handles ONE connection at a time, so calls are queued instead of fired
+// in parallel: overlapping requests stall each other and the page fills in piecemeal.
+let apiChain=Promise.resolve();
+function api(path,opt){
+  const run=()=>apiRaw(path,opt);
+  const p=apiChain.then(run,run);
+  apiChain=p.then(()=>{},()=>{});
+  return p;
 }
 const apiQuiet=(p,o)=>api(p,o).catch(()=>null);
 
@@ -1209,6 +1219,7 @@ async function pollNow(){
       const was=ST;ST=s;
       clockBase={t:s.t,at:Date.now(),run:s.s==='run',total:s.total};
       tempRecord(s);
+      if(!was){UPD.info=null;renderUpdateCard();}      // first reply: fill in the device-backed cards
       if(s.rev&&cfgRev&&s.rev!==cfgRev&&!cfgPushing){cfgRev=s.rev;cfgPull();}
       else if(s.rev&&!cfgRev)cfgRev=s.rev;
       if(!was||was.s!==s.s)renderPresets();
@@ -2214,7 +2225,8 @@ function renderDevice(){
     '<div class="kv"><span class="mut">Free heap</span><b>'+Math.round(s.heap/1024)+' kB</b></div>'+
     (s.net==='sta'?'<div class="kv"><span class="mut">Signal</span><b>'+s.rssi+' dBm</b></div>':'')+
     '<div class="kv"><span class="mut">Last reset</span><b>'+s.rst+(s.bo>0?' · '+s.bo+' brown-outs':'')+'</b></div>'+
-    '<div class="kv"><span class="mut">Sampling</span><b>'+fmt(s.fs/1000,1)+' kS/s per hall channel</b></div>'
+    '<div class="kv"><span class="mut">Sampling</span><b>'+fmt(s.fs/1000,1)+' kS/s per hall channel</b></div>'+
+    '<div class="kv"><span class="mut">Memory</span><b>'+(s.ps?'PSRAM':'internal RAM only')+' · '+(s.fftn||0)+'-point FFT</b></div>'
   ):'<div class="small mut">Connect to the device to see its status.</div>';
 }
 $('#btnReboot').onclick=()=>twoTap($('#btnReboot'),()=>apiQuiet('/api/reboot',{method:'POST'}),'Reboot?');
@@ -2238,6 +2250,7 @@ addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='m
 document.addEventListener('contextmenu',e=>{if(!e.target.closest('input,textarea'))e.preventDefault();});
 
 fillAll();
+renderUpdateCard();
 presetsLoad();
 pollNow();
 if(!ONDEV)connectNow();

@@ -7,8 +7,11 @@
 
 // After LittleFS is up. Creates the certificate authority and server certificate on the board
 // the first time, and signs a new server certificate when this build's dates or layout differ.
-// Safe to call when storage failed: it does nothing.
+// Returns immediately; the work runs on its own task so the web server can start first.
 void tlsPrepare();
+
+// True once that work has finished. Call tlsStart() from loop() when it does.
+bool tlsCertReady();
 
 // Listens on 443 for wss://<board>/ws (home Wi-Fi or the board's own Wi-Fi). Call after server.begin().
 // True when it is answering.
