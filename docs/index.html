@@ -2425,7 +2425,8 @@ function renderConnCard(){
   const host=$('#connBody');
   if(!host)return;
   const key=[WS_OK?WS.target:'',DEV.on?1:0,CONN.busy?1:0,ONDEV?1:0,(WS.why&&WS.why.kind)||'',
-    NET?[NET.wanted,NET.radio,NET.fail?1:0,NET.ip,NET.ssid,NET.hasPass?1:0,NET.why||'',NET.updAlt?1:0].join('|'):'-'].join('~');
+    NET?[NET.wanted,NET.radio,NET.fail?1:0,NET.ip,NET.ssid,NET.hasPass?1:0,NET.why||'',NET.updAlt?1:0,
+      NET.tx,NET.bo].join('|'):'-'].join('~');
   if(key===connKey&&host.childElementCount)return;
   if(host.contains(document.activeElement))return;      // someone is typing in it
   connKey=key;
@@ -2475,6 +2476,12 @@ function renderConnCard(){
       (NET.wanted==='sta'?' checked':'')+'><i></i></span></div>'+
       '<div class="flex mt8"><button class="btn sm pri" id="netSave">Save Wi-Fi</button>'+
       '<button class="btn sm" id="netGo">Save and reboot</button></div>'+
+      '<div class="row mt8"><div class="lbl">Radio power<span class="small mut">full reaches further; low draws less from the supply</span></div><div class="seg" id="txSeg">'+
+      ['Full','Reduced','Low'].map((t,v)=>'<button data-v="'+v+'" class="'+(NET.tx===v?'on':'')+'">'+t+'</button>').join('')+
+      '</div></div>'+
+      (NET.bo>0?'<div class="note bad">The device restarted '+NET.bo+(NET.bo===1?' time':' times')+
+        ' because its supply dipped (brown-out). The coil draws hard; check the supply and the capacitors, or try a lower '+
+        'radio power. <button class="btn sm ghost" id="boClear">Clear the count</button></div>':'')+
       '<div class="small mut mt8">This is also the network the online update uses, unless you give the update one of '+
       'its own below. If it is not there when the device boots - or it disappears while it is running - the device '+
       'hosts <b>'+(NET.ap||'Magneto')+'</b> at http://192.168.4.1 instead, so it is never out of reach. On the local '+
@@ -2514,6 +2521,18 @@ function renderConnCard(){
       await apiQuiet('/api/net',{method:'POST',form:true,body:netBody(want,true)});
       setTimeout(()=>{DEV.rebooting=false;NET=null;kick();},4000);
     },want==='sta'?'Reboot and join it?':'Reboot into its own Wi-Fi?');};
+  const tx=$('#txSeg');
+  if(tx)tx.addEventListener('click',async e=>{
+    const btn=e.target.closest('button');
+    if(!btn)return;
+    const v=Number(btn.dataset.v);
+    const r=await apiQuiet('/api/power',{method:'POST',form:true,body:'tx='+v});
+    if(r){NET=r;connKey='';renderConnCard();}        // applied at once, no reboot
+  });
+  const bc=$('#boClear');
+  if(bc)bc.onclick=async()=>{
+    const r=await apiQuiet('/api/power',{method:'POST',form:true,body:'clear=1'});
+    if(r){NET=r;connKey='';renderConnCard();}};
   if(NET&&$('#n_ssid'))$('#n_ssid').value=NET.ssid||'';
 }
 async function secTest(){
