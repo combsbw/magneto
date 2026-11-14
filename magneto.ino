@@ -227,7 +227,7 @@ static int stateJson(char* buf, size_t cap) {
     "\"ba0\":%.2f,\"ba1\":%.2f,\"brms\":%.2f,\"ss\":%.1f,\"f\":%.2f,\"fa\":%.2f,\"snr\":%.1f,"
     "\"z0\":%d,\"z1\":%d,\"clip\":%d,\"fs\":%.0f,"
     "\"tc\":%.1f,\"tf\":%.1f,\"dc\":%.1f,\"dfr\":%.1f,\"okc\":%d,\"okf\":%d,"
-    "\"pwmax\":%.0f,\"mga\":%d,\"mgh\":%.1f}",
+    "\"pwmax\":%.0f,\"mga\":%d,\"mgh\":%.1f,\"hwpw\":%lu,\"hwper\":%lu}",
     FW_VERSION, mg::stateName(eng.state), t, eng.total, stageIdx, eng.nWin,
     hz, pw, mg::dutyOf(hz, pw) * 100.0, (int)eng.trip, (unsigned long)cfgRev, otaBusy ? 1 : 0,
     (unsigned long)(millis() / 1000), radioSta ? "sta" : "ap", staFailed ? 1 : 0,
@@ -237,13 +237,17 @@ static int stateJson(char* buf, size_t cap) {
     s.bAvg0, s.bAvg1, s.bRms0, s.statSec, s.pkHz, s.pkAmp, s.pkSnr,
     s.zeroed0 ? 1 : 0, s.zeroed1 ? 1 : 0, s.clip ? 1 : 0, s.fs,
     isnan(s.tC) ? 0.0 : s.tC, isnan(s.tF) ? 0.0 : s.tF, s.dtdtC, s.dtdtF, s.okC ? 1 : 0, s.okF ? 1 : 0,
-    mg::pwFor(hz, mg::PW_MAX_US, cfg.maxPw), magArmed(s) ? 1 : 0, magHoldMs / 1000.f);
+    mg::pwFor(hz, mg::PW_MAX_US, cfg.maxPw), magArmed(s) ? 1 : 0, magHoldMs / 1000.f,
+    // Ground truth, read back off the pulse timer itself rather than from the plan: the on-time and
+    // period the ISR is really producing. The page checks the slider against these, so "the slider
+    // says 400 us" is backed by the hardware and not by the page agreeing with itself.
+    (unsigned long)(coilRunning() ? coilOnUs() : 0), (unsigned long)(coilRunning() ? coilPeriodUs() : 0));
   UNLOCK();
   return (n > 0 && (size_t)n < cap) ? n : -1;
 }
 
 static void sendState() {
-  char buf[1250];
+  char buf[1320];
   lastApiMs = millis();
   if (stateJson(buf, sizeof buf) < 0) { sendJson(500, "{\"ok\":false}"); return; }
   sendJson(200, buf);

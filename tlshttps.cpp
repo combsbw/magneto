@@ -451,7 +451,7 @@ static esp_err_t wsReq(httpd_req_t* req) {
     if (j.post != (post ? 1 : 0) || !uriIs(path, j.uri)) continue;
     const char* q = strchr(path, '?');
     q = q ? q + 1 : "";
-    char out[1600];
+    char out[1700];
     int hn = snprintf(out, sizeof out, "%s 200\n", id);
     int n = j.fn(q, out + hn, sizeof out - (size_t)hn);
     free(msg);
