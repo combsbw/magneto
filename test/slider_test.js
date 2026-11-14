@@ -26,6 +26,16 @@ eval(grab('periodUs'));eval(grab('pwCapUs'));eval(grab('pwFor'));eval(grab('pwCl
 let fail=0;
 const ck=(c,m)=>{if(!c){console.log('FAIL '+m);fail++;}};
 
+// normalize() clamps every stored stage with these as the page loads, so they have to be declared
+// above it. As consts further down they were still in their temporal dead zone at that moment and
+// the whole script threw before `cfg` existed - a blank page for anyone with a saved config.
+console.log('--- the drive limits are declared before the code that uses them at load time ---');
+ck(js.indexOf('const HZ_MAX=')>=0,'HZ_MAX/PW_MIN/PW_MAX are declared');
+ck(js.indexOf('const HZ_MAX=')<js.indexOf('function normalize('),
+   'the drive-limit consts come before normalize()');
+ck(js.indexOf('const HZ_MAX=')<js.indexOf('let cfg=normalize('),
+   'the drive-limit consts come before the cfg that normalize() builds at load');
+
 // The slider maps 0..top linearly. top() for pulse width = min(ceiling, period cap).
 const top=(hz,ceil)=>{const cap=pwCapUs(hz);if(cap<=0)return ceil>0?ceil:PW_MAX;return ceil>0?Math.min(ceil,cap):cap;};
 const unfrac=(f,t)=>t*f;

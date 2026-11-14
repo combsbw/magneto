@@ -934,6 +934,38 @@ function kick(){                                    /* page came back to the fro
 }
 
 /* ================= configuration ================= */
+/* ---- the drive limits ----
+   These sit here, above the settings, because normalize() clamps every stored stage with them as
+   the page loads: as consts further down they were still in their temporal dead zone at that point
+   and the whole script died before `cfg` existed, on any reload that had a saved config. */
+/* ---- the drive limits, mirrored from engine.h so the slider and the coil agree exactly ----
+   periodUs / pwCapUs / pwFor here are the same arithmetic as mg::periodUs / mg::pwCapUs / mg::pwFor
+   in the firmware. The page never shows a pulse width the board would not actually drive. */
+const HZ_MAX=250,PW_MIN=1,PW_MAX=500000;
+function periodUs(hz){
+  if(!(hz>=0.05))return 0;
+  let p=1e6/hz;
+  if(p<4000)p=4000;
+  if(p>2e7)p=2e7;
+  return Math.round(p);}
+function pwCapUs(hz){const per=periodUs(hz);return per?clamp(per-1,PW_MIN,PW_MAX):0;}
+// exactly mg::pwFor: what the coil is driven with (0 when parked)
+function pwFor(hz,pw,ceilUs){
+  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
+  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
+  const cap=pwCapUs(hz);
+  if(cap<=0)return 0;
+  return Math.min(v,cap);}
+// the same clamp for a stored setting, which keeps a real value while the coil is parked at 0 Hz
+function pwClamp(hz,pw,ceilUs){
+  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
+  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
+  const cap=pwCapUs(hz);
+  if(cap>0)v=Math.min(v,cap);
+  return Math.max(Math.round(v),PW_MIN);}
+function hzFor(hz){const c=cfg.max.hz;let v=clamp(Math.round(hz*10)/10,0,HZ_MAX);
+  if(c>0)v=Math.min(v,c);return v;}
+
 const AWGS=[8,10,12,14,16,18,20,22,24];
 function defCfg(){return{
   pins:{drive:7,hallC:1,hallP:2,thC:3,thF:4,r:5,g:6,b:8,coil:9,anode:true,coilLow:false},
@@ -1459,33 +1491,6 @@ $('#btnResetT').onclick=()=>twoTap($('#btnResetT'),()=>cmd('resettime'),'Restart
 $('#btnTripReset').onclick=()=>cmd('tripreset');
 
 /* ================= vertical sliders ================= */
-/* ---- the drive limits, mirrored from engine.h so the slider and the coil agree exactly ----
-   periodUs / pwCapUs / pwFor here are the same arithmetic as mg::periodUs / mg::pwCapUs / mg::pwFor
-   in the firmware. The page never shows a pulse width the board would not actually drive. */
-const HZ_MAX=250,PW_MIN=1,PW_MAX=500000;
-function periodUs(hz){
-  if(!(hz>=0.05))return 0;
-  let p=1e6/hz;
-  if(p<4000)p=4000;
-  if(p>2e7)p=2e7;
-  return Math.round(p);}
-function pwCapUs(hz){const per=periodUs(hz);return per?clamp(per-1,PW_MIN,PW_MAX):0;}
-// exactly mg::pwFor: what the coil is driven with (0 when parked)
-function pwFor(hz,pw,ceilUs){
-  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
-  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
-  const cap=pwCapUs(hz);
-  if(cap<=0)return 0;
-  return Math.min(v,cap);}
-// the same clamp for a stored setting, which keeps a real value while the coil is parked at 0 Hz
-function pwClamp(hz,pw,ceilUs){
-  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
-  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
-  const cap=pwCapUs(hz);
-  if(cap>0)v=Math.min(v,cap);
-  return Math.max(Math.round(v),PW_MIN);}
-function hzFor(hz){const c=cfg.max.hz;let v=clamp(Math.round(hz*10)/10,0,HZ_MAX);
-  if(c>0)v=Math.min(v,c);return v;}
 
 /* A slider spans 0 .. top() linearly, where top() is the smallest limit in force. With a ceiling
    set, top() IS the ceiling, so half way up the track is half the ceiling and a quarter up is a
