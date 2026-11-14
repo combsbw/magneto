@@ -17,10 +17,13 @@ bool tlsCertReady();
 // True when it is answering.
 bool tlsStart();
 
-// Requests the socket answers itself instead of repeating them to port 80 (the status poll, wake).
-//   json: GET (post = 0) or POST (post = 1) of uri; fn fills buf with a JSON reply and returns its length (or < 0 for an error).
+// Requests the socket answers itself instead of repeating them to port 80 (the status poll and the
+// commands behind every button - a trip through the loopback web server costs a TCP handshake and
+// several passes of loop(), which is most of the delay between a tap and the device reacting).
+//   json: GET (post = 0) or POST (post = 1) of uri; fn fills buf with a JSON reply and returns its
+//   length (or < 0 for an error). query is the part after "?" ("" when there is none).
 // The table must stay valid for the life of the program.
-struct TlsJson { const char* uri; uint8_t post; int (*fn)(char* buf, size_t cap); };
+struct TlsJson { const char* uri; uint8_t post; int (*fn)(const char* query, char* buf, size_t cap); };
 void tlsRoutes(const TlsJson* json, size_t nJson);
 
 // For the board's own page: whether the secure server is listening, and how many sockets it has accepted or refused (other site) since boot.

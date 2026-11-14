@@ -33,6 +33,38 @@ static void testPeriod() {
   CHECK(mg::snapHz(999.f) == 250.f);
 }
 
+// The two promises the pulse-width slider makes: nothing above the ceiling ever reaches the coil,
+// and no setting can ask for a pulse as long as its own period (which would be DC, not a pulse).
+static void testPwCap() {
+  CHECK(mg::pwCapUs(0.f) == 0.f);                 // parked
+  CHECK(mg::pwCapUs(10.f) == 99999.f);            // 100 ms period
+  CHECK(mg::pwCapUs(250.f) == 3999.f);            // 4 ms period
+
+  // the ceiling is the maximum, exactly
+  CHECK(mg::pwFor(10.f, 5000.f, 1000.f) == 1000.f);
+  CHECK(mg::pwFor(10.f, 1000.f, 1000.f) == 1000.f);
+  CHECK(mg::pwFor(10.f, 999.f, 1000.f) == 999.f);
+  CHECK(mg::pwFor(10.f, 1e9f, 1000.f) == 1000.f);
+
+  // no ceiling: the period still caps it, and never equals the period
+  CHECK(mg::pwFor(10.f, 500000.f, 0.f) == 99999.f);
+  CHECK(mg::pwFor(200.f, 500000.f, 0.f) == 4999.f);
+  CHECK(mg::pwFor(0.f, 100.f, 0.f) == 0.f);
+
+  // the bug this closes: a pulse set at a low frequency, then the frequency raised
+  CHECK(mg::pwFor(10.f, 10000.f, 0.f) == 10000.f);
+  CHECK(mg::pwFor(200.f, 10000.f, 0.f) == 4999.f);
+  for (float hz = 0.1f; hz <= 250.f; hz += 0.7f) {
+    float pw = mg::pwFor(hz, 500000.f, 0.f);
+    CHECK(pw < (float)mg::periodUs(hz));          // always an off phase
+    CHECK(mg::dutyOf(hz, pw) < 1.f);
+  }
+  // a ceiling never lets anything through above itself, at any frequency
+  for (float hz = 0.1f; hz <= 250.f; hz += 1.3f) {
+    CHECK(mg::pwFor(hz, 500000.f, 250.f) <= 250.f);
+  }
+}
+
 static void testWindows() {
   mg::Plan p;
   p.n = 3;
@@ -153,6 +185,20 @@ static void testConfig() {
   CHECK(mg::cfgFromJson(ceil, strlen(ceil), c, &pinsOk));
   CHECK(c.plan.st[0].hz == 50.f && c.plan.st[0].pwUs == 500.f);
 
+  // ... and with no ceiling the period still does: 9 ms asked for at 200 Hz (5 ms period)
+  const char* wide = "{\"run\":{\"stages\":[{\"on\":true,\"hz\":200,\"pw\":9000,\"sec\":10}]}}";
+  CHECK(mg::cfgFromJson(wide, strlen(wide), c, &pinsOk));
+  CHECK(c.plan.st[0].pwUs == 4999.f);
+  CHECK(mg::dutyOf(c.plan.st[0].hz, c.plan.st[0].pwUs) < 1.f);
+
+  // the magnet escape hatch has defaults and takes settings
+  const char* mag = "{\"safe\":{\"magAp\":true,\"magUt\":1500,\"magSec\":8}}";
+  CHECK(mg::cfgFromJson(mag, strlen(mag), c, &pinsOk));
+  CHECK(c.safe.magAp && c.safe.magUt == 1500.f && c.safe.magSec == 8.f);
+  const char* magOff = "{\"safe\":{\"magAp\":false,\"magUt\":5,\"magSec\":900}}";
+  CHECK(mg::cfgFromJson(magOff, strlen(magOff), c, &pinsOk));
+  CHECK(!c.safe.magAp && c.safe.magUt == 200.f && c.safe.magSec == 60.f);   // out of range clamps
+
   CHECK(mg::presetsJsonOk("[]", 2));
   CHECK(mg::presetsJsonOk("[{\"name\":\"a\"}]", 14));
   CHECK(!mg::presetsJsonOk("{}", 2));
@@ -177,8 +223,51 @@ static void testGh() {
   CHECK(strstr(out, "/assets/2") != nullptr);
 }
 
+static void testTuneCap() {
+  mg::Engine e;
+  mg::Plan p;
+  p.n = 1;
+  p.st[0] = mg::Stage{true, 10, 100, 0, {0, 0, 0}};
+  e.configure(p);
+  CHECK(e.start(0));
+  // a tune asking for more than the period gets the period cap, not DC
+  CHECK(e.tune(0, 200.f, 10000.f));
+  float hz = 0, pw = 0;
+  int si = 0;
+  double st = 0;
+  CHECK(e.drive(0, &hz, &pw, &si, &st));
+  CHECK(hz == 200.f);
+  CHECK(pw == 4999.f);
+  CHECK(mg::dutyOf(hz, pw) < 1.f);
+}
+
+// The secure socket reads command arguments with this, so a bug here means buttons do nothing.
+static void testQs() {
+  char v[16];
+  CHECK(mg::qsParam("c=tune&hz=12.5&pw=100", "c", v, sizeof v) && !strcmp(v, "tune"));
+  CHECK(mg::qsParam("c=tune&hz=12.5&pw=100", "hz", v, sizeof v) && !strcmp(v, "12.5"));
+  CHECK(mg::qsParam("c=tune&hz=12.5&pw=100", "pw", v, sizeof v) && !strcmp(v, "100"));
+  CHECK(!mg::qsParam("c=tune&hz=12.5", "pw", v, sizeof v) && v[0] == 0);
+  CHECK(mg::qsParam("c=start", "c", v, sizeof v) && !strcmp(v, "start"));
+  CHECK(mg::qsParam("c=clear&w=max", "w", v, sizeof v) && !strcmp(v, "max"));
+  CHECK(mg::qsParam("ch=1", "ch", v, sizeof v) && !strcmp(v, "1"));
+  CHECK(mg::qsParam("a=1&c=", "c", v, sizeof v) && v[0] == 0);     // present, empty value
+  CHECK(mg::qsParam("c=&hz=9", "c", v, sizeof v) && v[0] == 0);
+  CHECK(!mg::qsParam("", "c", v, sizeof v));
+  CHECK(!mg::qsParam(nullptr, "c", v, sizeof v));
+  CHECK(!mg::qsParam("hzx=5", "hz", v, sizeof v));                 // no prefix match
+  CHECK(!mg::qsParam("xhz=5", "hz", v, sizeof v));
+  CHECK(mg::qsParam("a=1&&hz=7", "hz", v, sizeof v) && !strcmp(v, "7"));
+  // a value longer than the buffer is truncated, never overrun
+  char small[4];
+  CHECK(mg::qsParam("hz=123456789", "hz", small, sizeof small) && !strcmp(small, "123"));
+}
+
 int main() {
   testPeriod();
+  testQs();
+  testPwCap();
+  testTuneCap();
   testWindows();
   testEngine();
   testConfig();

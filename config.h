@@ -32,6 +32,12 @@ struct Safety {
   bool on;           // master enable; off = thermal shutoff bypassed (the page warns loudly)
   bool needReset;    // a trip must be reset before the next start
   bool needProbe;    // refuse to start when an enabled probe reads open
+  // Magnet escape hatch: a steady DC field held on either hall sensor reboots the board into its
+  // own access point, so a device sitting on an unreachable local network can always be recovered
+  // with nothing but a magnet. Only armed while the board is on a local network.
+  bool magAp;        // enabled
+  float magUt;       // |B| that counts as "a magnet is on it", microtesla
+  float magSec;      // how long it has to stay there
 };
 
 struct LedCfg {
@@ -71,7 +77,7 @@ struct Config {
     plan.n = 1;
     plan.st[0] = Stage{true, 10.f, 100.f, 1200.f, Rgb{80.f, 200.f, 255.f}};
     maxHz = 0; maxPw = 0;
-    safe = Safety{110.f, 140.f, 20.f, 20.f, true, true, true};
+    safe = Safety{110.f, 140.f, 20.f, 20.f, true, true, true, true, 3000.f, 5.f};
     led = LedCfg{0, Rgb{80.f, 200.f, 255.f}, 80, 0, 70.f, 110.f, 100};
     hall = HallCfg{1.4f, 1.4f, 3.3f, true};
     therm = ThermCfg{3950.f, 10.f, 10.f, false};
@@ -156,6 +162,9 @@ inline void cfgLeaf(void* vctx, const char* path, char type, double num, const c
     else if (!strcmp(k, "on")) c.safe.on = num != 0;
     else if (!strcmp(k, "needReset")) c.safe.needReset = num != 0;
     else if (!strcmp(k, "needProbe")) c.safe.needProbe = num != 0;
+    else if (!strcmp(k, "magAp")) c.safe.magAp = num != 0;
+    else if (!strcmp(k, "magUt")) c.safe.magUt = clampf(f, 200.f, 100000.f);
+    else if (!strcmp(k, "magSec")) c.safe.magSec = clampf(f, 1.f, 60.f);
     return;
   }
   if (strncmp(path, "led.", 4) == 0) {
@@ -233,10 +242,12 @@ inline bool cfgFromJson(const char* s, size_t n, Config& out, bool* pinsOk) {
   }
   out.plan = p;
 
-  // Ceilings apply to every stage too: the plan cannot smuggle a value past them.
+  // Ceilings apply to every stage too: the plan cannot smuggle a value past them. The period cap
+  // goes on afterwards, so no stage can ask for a pulse as long as its own period.
   for (int i = 0; i < p.n; i++) {
-    if (out.maxHz > 0 && out.plan.st[i].hz > out.maxHz) out.plan.st[i].hz = out.maxHz;
-    if (out.maxPw > 0 && out.plan.st[i].pwUs > out.maxPw) out.plan.st[i].pwUs = out.maxPw;
+    Stage& st = out.plan.st[i];
+    if (out.maxHz > 0 && st.hz > out.maxHz) st.hz = out.maxHz;
+    st.pwUs = pwFor(st.hz, st.pwUs, out.maxPw);
   }
 
   bool ok = pinsValid(out.pins);

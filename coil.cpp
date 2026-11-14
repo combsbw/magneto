@@ -12,7 +12,6 @@ static volatile uint32_t gOnUs = 0, gOffUs = 0;
 static volatile uint32_t gPendOn = 0, gPendOff = 0;
 static volatile bool gPend = false;
 static volatile bool gRun = false;
-static volatile bool gDc = false;
 static volatile int gLevel = 0;
 static volatile int64_t gT0 = 0;
 static volatile uint32_t gCycles = 0;
@@ -66,7 +65,6 @@ void coilInit(int pin) {
 
 void coilOff() {
   gRun = false;
-  gDc = false;
   timerHalt();
   forceLow();
   gPhase = 0;
@@ -76,25 +74,18 @@ void coilSet(float hz, float pwUs) {
   uint32_t per = mg::periodUs(hz);
   if (gPin < 0 || per == 0 || pwUs < 0.5f) { coilOff(); return; }
   uint32_t on = (uint32_t)(pwUs + 0.5f);
-  if (on >= per) {                                    // DC: hold the gate high, no edges to time
-    timerHalt();
-    gRun = true;
-    gDc = true;
-    gOnUs = per;
-    gOffUs = 0;
-    gpio_set_level((gpio_num_t)gPin, 1);
-    gLevel = 1;
-    gT0 = esp_timer_get_time();
-    return;
-  }
+  // Last line of defence: the gate always gets an off phase. A pulse as long as its own period
+  // would be DC through the coil, which no slider position is allowed to mean. Callers clamp with
+  // mg::pwFor(); this catches anything that still arrives too wide.
+  if (on >= per) on = per - 1;
+  if (on < 1) on = 1;
   uint32_t off = per - on;
-  if (gRun && !gDc) {                                 // already pulsing: swap at the next ON edge
+  if (gRun) {                                         // already pulsing: swap at the next ON edge
     gPendOn = on;
     gPendOff = off;
     gPend = true;
     return;
   }
-  gDc = false;
   gOnUs = on;
   gOffUs = off;
   gPend = false;
@@ -109,7 +100,7 @@ bool coilRunning() { return gRun; }
 int coilLevel() { return gLevel; }
 uint32_t coilOnUs() { return gPend ? gPendOn : gOnUs; }
 uint32_t coilPeriodUs() {
-  if (!gRun || gDc) return 0;
+  if (!gRun) return 0;
   uint32_t on = gPend ? gPendOn : gOnUs, off = gPend ? gPendOff : gOffUs;
   return on + off;
 }

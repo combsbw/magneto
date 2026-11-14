@@ -99,10 +99,14 @@ html[data-th="dark"] .btn{box-shadow:0 2px 0 rgba(0,0,0,.5),0 3px 7px rgba(0,0,0
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 .switch{position:relative;width:44px;height:26px;flex:none;cursor:pointer}
 .switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
-.switch i{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:.15s}
+/* the track is drawn over the input, so it must not swallow the tap - without this every switch on
+   the page looks live and does nothing */
+.switch i{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:.15s;pointer-events:none}
 .switch i:before{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;
   top:3px;left:3px;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .switch input:checked+i{background:var(--acc)}
+.switch input:disabled{cursor:default}
+.switch input:disabled+i{opacity:.45}
 .switch input:checked+i:before{left:21px}
 .row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
@@ -155,9 +159,10 @@ html[data-th="dark"] .vtrack{box-shadow:inset 0 2px 7px rgba(0,0,0,.55),inset 0 
   box-shadow:inset 2px 0 3px rgba(255,255,255,.25),inset -2px 0 4px rgba(10,18,32,.25),inset 0 2px 2px rgba(255,255,255,.2)}
 .vtrack .tick{position:absolute;left:8px;right:8px;height:0;border-top:1px solid rgba(128,140,160,.4);pointer-events:none}
 .vtrack .tick.maj{left:5px;right:5px;border-top:1.5px solid rgba(128,140,160,.6)}
-.vtrack .tick span{position:absolute;right:-32px;top:-7px;font-size:9.5px;color:var(--mut);width:30px;text-align:left;
+/* clear of the thumb, which overhangs the track by 4px on each side */
+.vtrack .tick span{position:absolute;right:-44px;top:-7px;font-size:9.5px;color:var(--mut);width:32px;text-align:left;
   font-variant-numeric:tabular-nums}
-.vtrack .th{position:absolute;left:-7px;right:-7px;height:30px;border-radius:10px;transform:translateY(50%);
+.vtrack .th{position:absolute;left:-4px;right:-4px;height:30px;border-radius:10px;transform:translateY(50%);
   background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%),var(--thumb);
   border:1px solid var(--line2);box-shadow:0 3px 7px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.4)}
 .vtrack .th:after{content:"";position:absolute;left:14px;right:14px;top:9px;height:2px;border-radius:2px;
@@ -174,7 +179,17 @@ html[data-th="dark"] .vtrack{box-shadow:inset 0 2px 7px rgba(0,0,0,.55),inset 0 
 .vs .step button{width:40px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--card);
   font-size:16px;font-weight:700;cursor:pointer}
 .vs .maxrow{display:flex;gap:5px;align-items:center;justify-content:center;margin-top:8px;font-size:11.5px;color:var(--mut)}
-.vs .maxrow input{width:66px;padding:5px 6px;font-size:12px}
+.vs .maxrow input.num{width:62px;padding:5px 6px;font-size:12px}
+.vs .maxrow.off input.num{opacity:.45}
+.vs .maxrow .switch{width:34px;height:20px}
+.vs .maxrow .switch i:before{width:15px;height:15px;top:2.5px;left:2.5px}
+.vs .maxrow .switch input:checked+i:before{left:16.5px}
+.vs .maxrow.ro{opacity:.5}
+.vs .lim{font-size:10.5px;color:var(--mut);margin-top:5px;min-height:13px;font-variant-numeric:tabular-nums}
+.vs .lim b{color:var(--bad)}
+.warnTxt{color:var(--warn)!important;font-weight:700}
+.drvchk{font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums;margin-top:9px}
+.drvchk.bad{color:var(--bad);font-weight:600}
 
 /* ---- stage editor --------------------------------------------------------- */
 .stg{padding:8px 0;border-bottom:1px solid var(--line)}
@@ -298,7 +313,9 @@ details.fold>div{padding-bottom:11px}
         <div class="val mono"><span>10.0</span><small> Hz</small></div>
         <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
-        <div class="maxrow">ceiling <input class="num" type="number" min="0" max="250" step="0.1" placeholder="off"> Hz</div>
+        <div class="maxrow"><span class="switch"><input type="checkbox" class="ceilsw"><i></i></span>
+          ceiling <input class="num" type="number" min="0.1" max="250" step="0.1" placeholder="off"> Hz</div>
+        <div class="lim"></div>
       </div>
       <div class="vs" id="vsPw">
         <button class="lockb" title="Lock the slider">🔓</button>
@@ -306,11 +323,17 @@ details.fold>div{padding-bottom:11px}
         <div class="val mono"><span>100</span><small> µs</small></div>
         <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
-        <div class="maxrow">ceiling <input class="num" type="number" min="0" step="1" placeholder="off"> µs</div>
+        <div class="maxrow"><span class="switch"><input type="checkbox" class="ceilsw"><i></i></span>
+          ceiling <input class="num" type="number" min="1" max="500000" step="1" placeholder="off"> µs</div>
+        <div class="lim"></div>
       </div>
     </div>
-    <div class="note small">Duty is reported, not set: it follows frequency × pulse width. Ceilings can only be
-      changed while the coil is off; the lock button freezes a slider against accidental touches.</div>
+    <div class="drvchk" id="drvChk"></div>
+    <div class="note small">Duty is reported, not set: it follows frequency × pulse width. With a ceiling on, the top of
+      the slider <b>is</b> the ceiling and the scale is even below it - halfway up is half the ceiling, a quarter up is a
+      quarter of it. A ceiling can only be changed while the coil is off or paused; the lock button freezes a slider
+      against accidental touches. A pulse is always shorter than its own period, so the pulse-width ceiling is also held
+      under whatever the current frequency allows - the line under the slider says which limit is binding.</div>
   </div>
 
   <div class="card">
@@ -582,6 +605,23 @@ details.fold>div{padding-bottom:11px}
       <span class="switch"><input type="checkbox" id="s_needProbe"><i></i></span></div>
     <div class="note bad hide" id="bypassNote">Thermal shutoff is OFF. The coil will not stop itself on
       temperature - watch it yourself.</div>
+    <h2 class="mt8">Magnet recovery</h2>
+    <div class="row"><div class="lbl">Magnet reboots into its own Wi-Fi<span class="small mut">armed only while the
+      device is on a local network</span></div>
+      <span class="switch"><input type="checkbox" id="s_magAp"><i></i></span></div>
+    <div class="row"><div class="lbl">Field threshold <span class="small mut">µT on a zeroed hall sensor</span></div>
+      <input class="num" id="s_magUt" type="number" min="200" max="100000" step="100"></div>
+    <div class="row"><div class="lbl">Hold for <span class="small mut">seconds</span></div>
+      <input class="num" id="s_magSec" type="number" min="1" max="60" step="1"></div>
+    <div class="note small" id="magNote">Hold a magnet against a hall sensor for this long and the device saves
+      “own access point” as its mode and restarts, so you can always reach it at http://192.168.4.1 even when the
+      network it was on has moved, changed its password or gone. The field has to stay above the threshold the whole
+      time, so the coil's own pulses - which fall back towards zero between pulses - do not trigger it. Turn Local
+      Wi-Fi back on under Connection when you want it to rejoin.</div>
+    <div class="note small warn hide" id="magZeroNote">Zero the hall sensors first. Until a sensor has a stored zero
+      its own offset can look like a magnet, so only zeroed sensors are watched. Use <b>Zero both</b> on the Measure
+      tab with no magnet near the coil - it is stored and survives a reboot.</div>
+    <div class="kv"><span class="mut">Field now</span><b id="magNow">—</b></div>
     <div class="flex mt8">
       <button class="btn sm" id="safeSaveDef">Save as my defaults</button>
       <button class="btn sm ghost" id="safeLoadDef">Restore my defaults</button>
@@ -711,7 +751,7 @@ const DEV_LIKE=/^https?:$/.test(location.protocol)&&(HOSTN==='magneto.local'||HO
   HOSTN==='127.0.0.1'||/\.local$/.test(HOSTN)||/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(HOSTN));
 const WS_OK=!DEV_LIKE&&/^https?:$/.test(location.protocol)&&typeof WebSocket==='function';
 const ONDEV=DEV_LIKE&&location.protocol==='http:';
-const TARGETS={home:{name:'Home network',host:'magneto.local'},ap:{name:'Magneto Wi-Fi',host:'192.168.4.1'}};
+const TARGETS={home:{name:'Local network',host:'magneto.local'},ap:{name:'Magneto Wi-Fi',host:'192.168.4.1'}};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -824,11 +864,17 @@ function hedged(path,opt){
   });
 }
 const apiQuiet=(p,o)=>api(p,o).catch(()=>null);
+/* The board answers one request at a time, and the scope / FFT / fold payloads are by far the
+   biggest. Anything the user just did is counted here, and the measurement poller waits for it, so a
+   button press is never stuck behind a 6 kB waveform. */
+const BUSY={n:0};
+function hiPri(pr){BUSY.n++;return pr.finally(()=>{BUSY.n--;});}
 
 /* ---- the header pill ---- */
 function linkLabel(){
   if(DEV.on){
-    if(DEV.net==='sta')return DEV.fail?'AP fallback':devHost();
+    if(DEV.net==='sta')return devHost();
+    if(DEV.fail)return 'Magneto Wi-Fi (fallback)';
     return ONDEV?'This device':TARGETS[WS.target].name;
   }
   if(CONN.busy)return 'Connecting…';
@@ -899,7 +945,8 @@ function defCfg(){return{
     {on:false,hz:100,pw:20,sec:600,col:'#ff8fa3',name:''}],
     rFrom:-1,rTo:-1,rN:1},
   max:{hz:0,pw:0},
-  safe:{coilMax:110,fetMax:140,coilRate:20,fetRate:20,on:true,needReset:true,needProbe:true},
+  safe:{coilMax:110,fetMax:140,coilRate:20,fetRate:20,on:true,needReset:true,needProbe:true,
+    magAp:true,magUt:3000,magSec:5},
   led:{mode:0,col:'#50c8ff',master:80,dataSrc:0,dataMin:70,dataMax:110,coilBright:100},
   hall:{sens5c:1.4,sens5p:1.4,vcc:3.3,ratio:true},
   therm:{beta:3950,r0:10,rs:10,top:false},
@@ -928,26 +975,38 @@ function normalize(c){
   }
   if(!(o.coil.ry>0))o.coil.ry=o.coil.rin;
   if(o.coil.ry>o.coil.rin){const t=o.coil.rin;o.coil.rin=o.coil.ry;o.coil.ry=t;}   // major axis first
-  for(const s of o.run.stages){s.hz=clamp(Math.round(s.hz*10)/10,0,250);s.pw=clamp(Math.round(s.pw),1,500000);
-    s.sec=clamp(Math.round(s.sec),0,21600);s.name=String(s.name||'').slice(0,20);}
   o.max.hz=clamp(o.max.hz||0,0,250);o.max.pw=clamp(o.max.pw||0,0,500000);
+  o.safe.magUt=clamp(Number(o.safe.magUt)||3000,200,100000);
+  o.safe.magSec=clamp(Number(o.safe.magSec)||5,1,60);
+  o.safe.magAp=!!o.safe.magAp;
+  // Whatever arrives - a preset, a board that ran older firmware, a hand-edited file - is put
+  // through the same ceiling-then-period clamp the coil uses, so no stored pair can be out of range.
+  for(const s of o.run.stages){
+    s.hz=clamp(Math.round(s.hz*10)/10,0,250);
+    if(o.max.hz>0)s.hz=Math.min(s.hz,o.max.hz);
+    s.pw=pwClamp(s.hz,s.pw,o.max.pw);
+    s.sec=clamp(Math.round(s.sec),0,21600);s.name=String(s.name||'').slice(0,20);}
   return o;}
 let cfg=normalize(load('mg-cfg-v1',null));
-let cfgRev=0,cfgPushing=0;
+let cfgRev=0,cfgPushing=0,cfgDirtyLocal=false;
 const cfgLocal=debounce(()=>store('mg-cfg-v1',cfg),300);
+/* Settings are pushed after a pause, not on every slider tick: the whole config is one POST the
+   board re-parses and re-applies, so sending it mid-drag is what used to make a drag feel heavy.
+   Live frequency / pulse width go out separately and immediately as a tune. */
 const cfgPush=debounce(async()=>{
   if(!DEV.on)return;
   cfgPushing++;
   try{const r=await api('/api/config',{method:'POST',body:JSON.stringify(cfg)});
     if(r&&r.rev)cfgRev=r.rev;
+    cfgDirtyLocal=false;
     if(r&&r.pins===false){$('#pinWarn').classList.add('show');}
   }catch(e){}
   cfgPushing--;
-},350);
-function touch(){cfgLocal();cfgPush();renderPlanInfo();renderPresets();}
+},700);
+function touch(){cfgDirtyLocal=true;cfgLocal();cfgPush();renderPlanInfo();renderPresets();}
 async function cfgPull(){
   const r=await apiQuiet('/api/config');
-  if(r&&Object.keys(r).length){cfg=normalize(r);store('mg-cfg-v1',cfg);fillAll();}
+  if(r&&Object.keys(r).length){cfg=normalize(r);store('mg-cfg-v1',cfg);cfgDirtyLocal=false;fillAll();}
   else if(r!==null){cfgPush();}       // a fresh board: seed it with our local settings
 }
 /* ================= physics =================
@@ -1299,6 +1358,8 @@ function renderState(){
     tempTile($('#tileTc'),$('#lvTc'),$('#lvTcS'),s.tc,s.okc,s.dc,cfg.safe.coilMax);
     tempTile($('#tileTf'),$('#lvTf'),$('#lvTfS'),s.tf,s.okf,s.dfr,cfg.safe.fetMax);
   }
+  slidersPaint();          // the ceiling row locks with the run state, and the device echo updates
+  if(TAB==='set')magPaint();
   renderMeasure&&renderMeasure();
 }
 function tempTile(tile,v,sub,tF,ok,rate,limF){
@@ -1323,7 +1384,7 @@ async function devPoll(){
   if(!DEV.on){DEV.polling=false;return;}
   if(!DEV.rebooting){
     try{
-      const j=await(DEV.fails?hedged('/api/state'):api('/api/state'));
+      const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
       if(j&&j.app==='magneto'){
         const was=ST;ST=j;
         DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
@@ -1336,30 +1397,60 @@ async function devPoll(){
       }
     }catch(e){
       /* a few misses are normal on a busy single-connection server; give up only after several */
-      if(++DEV.fails>=5){DEV.on=false;DEV.polling=false;connRender();devConnect(false);return;}
+      if(++DEV.fails>=4){DEV.on=false;DEV.polling=false;connRender();devConnect(false);return;}
     }
   }
   renderState();
-  setTimeout(devPoll,DEV.fails?1200:(document.hidden?2500:400));
+  setTimeout(devPoll,DEV.fails?900:(document.hidden?2500:(BUSY.n>0?500:350)));
 }
 setInterval(()=>{if(clockBase.run)renderState();},500);
 
 /* ================= commands ================= */
+/* The state the page is showing, moved before the answer comes back. The device decides, and its
+   reply overwrites this a moment later; showing the press immediately is what removes the lag
+   between tapping a button and the page acknowledging it. */
+function optimistic(c){
+  if(!ST)return;
+  const now=Date.now(),was=ST.s;
+  if(c==='start'&&(was==='idle'||was==='pause'||was==='done')){
+    ST=Object.assign({},ST,{s:'run'});
+    // resuming from a pause keeps the clock; starting fresh or after a finish restarts it
+    clockBase={t:was==='pause'?clockBase.t:0,at:now,run:true,total:clockBase.total};
+  }else if(c==='pause'&&was==='run'){
+    const t=clockBase.t+(now-clockBase.at)/1000;
+    ST=Object.assign({},ST,{s:'pause'});
+    clockBase={t,at:now,run:false,total:clockBase.total};
+  }else if(c==='stop'&&(was==='run'||was==='pause'||was==='done')){
+    ST=Object.assign({},ST,{s:'idle'});
+    clockBase={t:0,at:now,run:false,total:clockBase.total};
+  }else if(c==='resettime'){
+    clockBase={t:0,at:now,run:clockBase.run,total:clockBase.total};
+  }else return;
+  renderState();
+}
 async function cmd(c,args){
   let q='/api/cmd?c='+c;
   for(const k in args||{})q+='&'+k+'='+encodeURIComponent(args[k]);
-  try{const s=await api(q,{method:'POST'});
+  optimistic(c);
+  try{const s=await hiPri(api(q,{method:'POST',timeout:3500}));
+    if(s&&s.ok===false)throw Object.assign(new Error(s.err||'refused'),{soft:true});
     if(s&&s.app){ST=s;clockBase={t:s.t,at:Date.now(),run:s.s==='run',total:s.total};renderState();}
     return s;
   }catch(e){
     if(e.message==='probe')$('#probeNote').classList.remove('hide');
     if(e.message==='cool')$('#tripBox').innerHTML='<b>Still warm.</b> The reset takes once a fresh reading is at or below the limit.';
+    devPoll&&kick();                       /* the guess was wrong, or the call was lost: resync */
     return null;
   }
 }
 $('#btnStart').onclick=async()=>{
   if(!DEV.on)return;
-  await api('/api/config',{method:'POST',body:JSON.stringify(cfg)}).then(r=>{if(r&&r.rev)cfgRev=r.rev;}).catch(()=>{});
+  // The plan only has to be pushed when it has actually changed since the last push, so the common
+  // case - press Start with nothing edited - is a single round trip instead of two.
+  if(cfgDirtyLocal){
+    await hiPri(api('/api/config',{method:'POST',body:JSON.stringify(cfg)})
+      .then(r=>{if(r&&r.rev)cfgRev=r.rev;cfgDirtyLocal=false;}).catch(()=>{}));
+  }
   cmd('start');
 };
 $('#btnPause').onclick=()=>cmd('pause');
@@ -1368,31 +1459,63 @@ $('#btnResetT').onclick=()=>twoTap($('#btnResetT'),()=>cmd('resettime'),'Restart
 $('#btnTripReset').onclick=()=>cmd('tripreset');
 
 /* ================= vertical sliders ================= */
+/* ---- the drive limits, mirrored from engine.h so the slider and the coil agree exactly ----
+   periodUs / pwCapUs / pwFor here are the same arithmetic as mg::periodUs / mg::pwCapUs / mg::pwFor
+   in the firmware. The page never shows a pulse width the board would not actually drive. */
+const HZ_MAX=250,PW_MIN=1,PW_MAX=500000;
+function periodUs(hz){
+  if(!(hz>=0.05))return 0;
+  let p=1e6/hz;
+  if(p<4000)p=4000;
+  if(p>2e7)p=2e7;
+  return Math.round(p);}
+function pwCapUs(hz){const per=periodUs(hz);return per?clamp(per-1,PW_MIN,PW_MAX):0;}
+// exactly mg::pwFor: what the coil is driven with (0 when parked)
+function pwFor(hz,pw,ceilUs){
+  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
+  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
+  const cap=pwCapUs(hz);
+  if(cap<=0)return 0;
+  return Math.min(v,cap);}
+// the same clamp for a stored setting, which keeps a real value while the coil is parked at 0 Hz
+function pwClamp(hz,pw,ceilUs){
+  let v=clamp(Math.round(pw),PW_MIN,PW_MAX);
+  if(ceilUs>0)v=Math.min(v,clamp(Math.round(ceilUs),PW_MIN,PW_MAX));
+  const cap=pwCapUs(hz);
+  if(cap>0)v=Math.min(v,cap);
+  return Math.max(Math.round(v),PW_MIN);}
+function hzFor(hz){const c=cfg.max.hz;let v=clamp(Math.round(hz*10)/10,0,HZ_MAX);
+  if(c>0)v=Math.min(v,c);return v;}
+
+/* A slider spans 0 .. top() linearly, where top() is the smallest limit in force. With a ceiling
+   set, top() IS the ceiling, so half way up the track is half the ceiling and a quarter up is a
+   quarter of it - no log scale, no values hiding above the line. */
 function vslider(el,o){
   const track=el.querySelector('.vtrack'),fill=el.querySelector('.fill'),th=el.querySelector('.th'),
     ceil=el.querySelector('.ceil'),valEl=el.querySelector('.val span'),lockb=el.querySelector('.lockb'),
-    maxIn=el.querySelector('.maxrow input');
+    maxRow=el.querySelector('.maxrow'),maxIn=el.querySelector('.maxrow input.num'),
+    ceilSw=el.querySelector('.ceilsw'),limEl=el.querySelector('.lim');
   let dragging=false,dragUntil=0;
-  function range(){return o.range();}
-  function frac(v){const r=range();return o.log?
-    clamp(Math.log(Math.max(v,r.min)/r.min)/Math.log(r.max/r.min),0,1):
-    clamp((v-r.min)/(r.max-r.min),0,1);}
-  function unfrac(f){const r=range();return o.log?r.min*Math.pow(r.max/r.min,f):r.min+(r.max-r.min)*f;}
+  const top=()=>o.top();
+  function frac(v){const t=top();return t>0?clamp(v/t,0,1):0;}
+  function unfrac(f){return top()*f;}
   let tickKey='';
   function paintTicks(){
-    const r=range(),key=r.min+'|'+r.max+'|'+(o.log?1:0);
+    const t=top(),key=String(t);
     if(key===tickKey)return;
     tickKey=key;
-    track.querySelectorAll('.tick').forEach(t=>t.remove());
-    const marks=o.ticks?o.ticks(r):[];
-    for(const m of marks){
-      const f=frac(m.v);
-      if(f<=0.005||f>=0.995)continue;
+    track.querySelectorAll('.tick').forEach(x=>x.remove());
+    if(!(t>0))return;
+    const step=niceStep(t);                      // five-ish labelled divisions, halves in between
+    for(let k=1;k*(step/2)<t-1e-9;k++){
+      const v=k*(step/2),f=frac(v);
+      if(f<=0.02||f>=0.985)continue;
+      const maj=k%2===0;
       const d=document.createElement('div');
-      d.className='tick'+(m.maj?' maj':'');
+      d.className='tick'+(maj?' maj':'');
       d.style.bottom=(f*100)+'%';
-      if(m.label){const sp=document.createElement('span');sp.textContent=m.label;d.appendChild(sp);}
-      track.insertBefore(d,th);          // under the thumb, over the fill
+      if(maj){const sp=document.createElement('span');sp.textContent=o.tickFmt(v);d.appendChild(sp);}
+      track.insertBefore(d,th);                  // under the thumb, over the fill
     }
   }
   function paint(){
@@ -1403,24 +1526,30 @@ function vslider(el,o){
     el.classList.toggle('locked',o.locked());
     lockb.textContent=o.locked()?'🔒':'🔓';
     paintTicks();
-    const mx=o.ceiling();
-    if(mx>0){
+    const mx=o.ceiling(),t=top(),lim=o.limit();
+    // the dashed line marks the top of the usable range, named by whichever limit is binding
+    if(lim.show){
       ceil.classList.remove('hide');
-      ceil.style.bottom=(frac(mx)*100)+'%';
+      ceil.style.bottom=(frac(t)*100)+'%';
       ceil.style.top='auto';
-      ceil.querySelector('.cv').textContent=o.ceilFmt(mx)+(o.unit||'');
+      ceil.querySelector('.cv').textContent=o.ceilFmt(t)+(o.unit||'');
+      ceil.querySelector('.cl').textContent=lim.tag;
     }else ceil.classList.add('hide');
+    limEl.innerHTML=lim.note;
+    const edit=ceilEditable();
+    if(document.activeElement!==ceilSw)ceilSw.checked=mx>0;
     if(maxIn!==document.activeElement)maxIn.value=mx>0?o.ceilFmt(mx):'';
-    maxIn.disabled=!coilIsOff();
+    maxIn.disabled=!edit||mx<=0;
+    ceilSw.disabled=!edit;
+    maxRow.classList.toggle('off',mx<=0);
+    maxRow.classList.toggle('ro',!edit);
   }
   function fromEvent(ev){
     const r=track.getBoundingClientRect();
     const y=(ev.touches?ev.touches[0].clientY:ev.clientY);
-    let f=clamp(1-(y-r.top)/r.height,0,1);
-    let v=o.snap(unfrac(f));
-    const mx=o.ceiling();
-    if(mx>0&&v>mx)v=mx;
-    o.set(v);paint();
+    const f=clamp(1-(y-r.top)/r.height,0,1);
+    o.set(o.clampV(unfrac(f)));
+    paint();
   }
   track.addEventListener('pointerdown',ev=>{
     if(o.locked())return;
@@ -1430,72 +1559,127 @@ function vslider(el,o){
   track.addEventListener('pointerup',up);track.addEventListener('pointercancel',up);
   el.querySelectorAll('.step button').forEach(b=>b.onclick=()=>{
     if(o.locked())return;
-    let v=o.snap(o.get()+o.stepBy(o.get())*Number(b.dataset.d));
-    const mx=o.ceiling();if(mx>0&&v>mx)v=mx;
-    o.set(v);o.commit();paint();});
+    o.set(o.clampV(o.get()+o.stepBy(o.get())*Number(b.dataset.d)));
+    o.commit();paint();});
   lockb.onclick=()=>{o.setLock(!o.locked());paint();};
-  maxIn.addEventListener('change',()=>{
-    if(!coilIsOff())return;
+  // ceiling on/off. Switching it on starts from where the slider is now, so the number box has a
+  // sensible value to edit instead of jumping the range.
+  ceilSw.addEventListener('change',()=>{
+    if(!ceilEditable()){ceilSw.checked=o.ceiling()>0;return;}
+    o.setCeiling(ceilSw.checked?(o.get()>0?o.get():top()):0);
+    slidersPaint();});
+  const applyMax=()=>{
+    if(!ceilEditable()||o.ceiling()<=0)return;
     const v=parseFloat(maxIn.value);
-    o.setCeiling(Number.isFinite(v)&&v>0?v:0);paint();});
+    if(!Number.isFinite(v)||v<=0)return;         // an empty box is not "ceiling off" - the switch is
+    o.setCeiling(v);
+    slidersPaint();};
+  maxIn.addEventListener('change',applyMax);
+  maxIn.addEventListener('blur',applyMax);
   return{paint,busy:()=>dragging||Date.now()<dragUntil};
 }
+// A ceiling may be set while the coil is not driving: idle, finished, tripped, or paused.
+function ceilEditable(){return!ST||ST.s==='idle'||ST.s==='done'||ST.s==='trip'||ST.s==='pause';}
 function coilIsOff(){return!ST||ST.s==='idle'||ST.s==='done'||ST.s==='trip';}
-const tuneSend=debounce(()=>{if(ST&&ST.s==='run')cmd('tune',{hz:curHz(),pw:curPw()});},160);
+/* A slider move while running sends the tune straight away - waiting out a debounce is most of what
+   makes the page feel slow - and coalesces anything that follows within 150 ms. */
+const tuneLate=debounce(()=>{if(ST&&ST.s==='run')cmd('tune',{hz:curHz(),pw:curPw()});},150);
+let tuneAt=0;
+function tuneNow(){
+  if(!ST||ST.s!=='run')return;
+  const now=Date.now();
+  if(now-tuneAt>150){tuneAt=now;cmd('tune',{hz:curHz(),pw:curPw()});}
+  else tuneLate();
+}
 function curHz(){return cfg.run.stages[liveStage()].hz;}
 function curPw(){return cfg.run.stages[liveStage()].pw;}
 function liveStage(){
   if(ST&&ST.s==='run'&&ST.stage>=0&&cfg.ui.stagesOn)return clamp(ST.stage,0,4);
   return 0;
 }
+const tickUs=v=>v>=1e6?fmt(v/1e6,1)+'s':v>=1000?fmt(v/1000,v>=10000?0:1)+'m':String(Math.round(v))+'µ';
 const VSH=vslider($('#vsHz'),{
-  range:()=>({min:0,max:cfg.max.hz>0?cfg.max.hz:250}),log:false,unit:' Hz',
-  ticks:r=>{
-    const out=[],step=niceStep(r.max-r.min);
-    for(let v=step/2;v<r.max;v+=step/2){
-      const maj=Math.abs(v/step-Math.round(v/step))<1e-6;
-      out.push({v,maj,label:maj?fmtHzV(v):null});
-    }
-    return out;},
+  unit:' Hz',
+  top:()=>cfg.max.hz>0?cfg.max.hz:HZ_MAX,
+  limit:()=>{
+    const c=cfg.max.hz;
+    return c>0?{show:true,tag:'MAX',note:'max <b>'+fmtHzV(c)+' Hz</b> (ceiling)'}
+              :{show:false,tag:'MAX',note:'range 0 - 250 Hz, no ceiling set'};},
+  tickFmt:fmtHzV,
   get:curHz,set:v=>{cfg.run.stages[liveStage()].hz=v;},
-  snap:v=>clamp(Math.round(v*10)/10,0,250),
+  clampV:hzFor,
   stepBy:v=>v>=100?1:0.1,
   fmt:v=>fmtHzV(v),ceilFmt:v=>fmtHzV(v),
   locked:()=>cfg.ui.lockHz,setLock:v=>{cfg.ui.lockHz=v;touch();},
-  ceiling:()=>cfg.max.hz,setCeiling:v=>{cfg.max.hz=clamp(v,0,250);
-    if(v>0)for(const s of cfg.run.stages)s.hz=Math.min(s.hz,v);touch();fillStages();},
-  commit:()=>{touch();tuneSend();dutyPaint();}
+  ceiling:()=>cfg.max.hz,
+  setCeiling:v=>{cfg.max.hz=v>0?clamp(Math.round(v*10)/10,0.1,HZ_MAX):0;clampAll();},
+  commit:()=>{clampAll();tuneNow();}
 });
 const VSP=vslider($('#vsPw'),{
-  range:()=>{
-    const hz=curHz(),per=hz>0.05?1e6/hz:500000;
-    return{min:1,max:Math.min(cfg.max.pw>0?cfg.max.pw:per,per,500000)};},
-  log:true,unit:' µs',
-  ticks:r=>{
-    const out=[],lab=us=>us<1000?us+'µ':us<1e6?(us/1000)+'m':'1s';
-    for(let d=1;d<=1e6;d*=10){
-      if(d>r.min&&d<r.max)out.push({v:d,maj:true,label:lab(d)});
-      for(const m of[2,5]){const v=d*m;if(v>r.min&&v<r.max)out.push({v,maj:false});}
-    }
-    return out;},
+  unit:' µs',
+  // the ceiling when one is set, but never past what the current frequency can carry
+  top:()=>{
+    const cap=pwCapUs(curHz());
+    if(cap<=0)return cfg.max.pw>0?cfg.max.pw:PW_MAX;      // parked at 0 Hz: show the ceiling's scale
+    return cfg.max.pw>0?Math.min(cfg.max.pw,cap):cap;},
+  limit:()=>{
+    const c=cfg.max.pw,hz=curHz(),cap=pwCapUs(hz);
+    if(cap<=0)return{show:false,tag:'MAX',note:'coil parked at 0 Hz'};
+    if(c>0&&c<=cap)return{show:true,tag:'MAX',note:'max <b>'+Math.round(c)+' µs</b> (ceiling)'};
+    if(c>0)return{show:true,tag:'PERIOD',
+      note:'max <b>'+Math.round(cap)+' µs</b> - the period at '+fmtHzV(hz)+' Hz, below your '+Math.round(c)+' µs ceiling'};
+    return{show:true,tag:'PERIOD',note:'max <b>'+Math.round(cap)+' µs</b> - the period at '+fmtHzV(hz)+' Hz'};},
+  tickFmt:tickUs,
   get:curPw,set:v=>{cfg.run.stages[liveStage()].pw=v;},
-  snap:v=>clamp(Math.round(v),1,500000),
+  clampV:v=>pwClamp(curHz(),v,cfg.max.pw),
   stepBy:v=>v>=20000?1000:v>=2000?100:v>=200?10:1,
   fmt:v=>v>=10000?fmt(v/1000,1):String(Math.round(v)),ceilFmt:v=>String(Math.round(v)),
   locked:()=>cfg.ui.lockPw,setLock:v=>{cfg.ui.lockPw=v;touch();},
-  ceiling:()=>cfg.max.pw,setCeiling:v=>{cfg.max.pw=clamp(v,0,500000);
-    if(v>0)for(const s of cfg.run.stages)s.pw=Math.min(s.pw,v);touch();fillStages();},
-  commit:()=>{touch();tuneSend();dutyPaint();}
+  ceiling:()=>cfg.max.pw,
+  setCeiling:v=>{cfg.max.pw=v>0?clamp(Math.round(v),PW_MIN,PW_MAX):0;clampAll();},
+  commit:()=>{clampAll();tuneNow();}
 });
+
+// Every stage - and the live value - put through the same clamp the firmware uses, so nothing in the
+// config can sit above a ceiling or above its own period. Called after any change to either.
+function clampAll(){
+  for(const st of cfg.run.stages){
+    st.hz=hzFor(st.hz);
+    st.pw=pwClamp(st.hz,st.pw,cfg.max.pw);
+  }
+  touch();fillStages();
+}
 function pwUnitPaint(){const v=curPw();$('#vsPw .val small').textContent=v>=10000?' ms':' µs';}
 function dutyPaint(){
-  const hz=curHz(),pw=curPw();
-  const per=hz>0.05?1e6/hz:0;
+  const hz=curHz(),pw=curPw(),per=periodUs(hz);
   const d=per?clamp(pw/per,0,1)*100:0;
-  $('#dutyTop').textContent=hz>0.05?('duty '+(d>=1?fmt(d,1):d>=0.01?fmt(d,3):fmt(d,5))+'% · period '+fmtUs(per)):'coil parked (0 Hz)';
+  const el=$('#dutyTop');
+  el.textContent=per?('duty '+(d>=1?fmt(d,1):d>=0.01?fmt(d,3):fmt(d,5))+'% · period '+fmtUs(per)):'coil parked (0 Hz)';
+  // Duty is not a setting, but a high one is a lot of heat in the coil and the MOSFET, and it is easy
+  // to arrive at by raising the frequency under a wide pulse. Say so rather than let it pass quietly.
+  el.className='small mono '+(per&&d>=50?'warnTxt':'mut');
+  el.title=per&&d>=50?'The coil is on for '+fmt(d,0)+'% of every cycle. Lower the pulse width or the frequency.':'';
   pwUnitPaint();
 }
-function slidersPaint(){if(!VSH.busy())VSH.paint();if(!VSP.busy())VSP.paint();dutyPaint();}
+/* What the board says it is actually driving, next to what the sliders say. The device reports its
+   own hz / pw / duty every poll, so a disagreement is visible instead of silent. */
+function drvChkPaint(){
+  const el=$('#drvChk');
+  if(!el)return;
+  if(!ST||!DEV.on){el.textContent='';el.classList.remove('bad');return;}
+  if(ST.s!=='run'){
+    const want=pwFor(curHz(),curPw(),cfg.max.pw);
+    el.classList.remove('bad');
+    el.textContent=want>0?('ready: '+fmtHzV(curHz())+' Hz · '+Math.round(want)+' µs when started'):'coil parked (0 Hz)';
+    return;}
+  const dHz=Math.abs((ST.hz||0)-curHz()),dPw=Math.abs((ST.pw||0)-pwFor(curHz(),curPw(),cfg.max.pw));
+  const bad=dHz>0.051||dPw>1.5;
+  el.classList.toggle('bad',bad);
+  el.textContent=(bad?'⚠ device is driving ':'device confirms ')+fmtHzV(ST.hz||0)+' Hz · '+
+    Math.round(ST.pw||0)+' µs · duty '+fmt(ST.duty||0,3)+'%'+
+    (bad?' - the sliders say '+fmtHzV(curHz())+' Hz · '+Math.round(curPw())+' µs':'');
+}
+function slidersPaint(){if(!VSH.busy())VSH.paint();if(!VSP.busy())VSP.paint();dutyPaint();drvChkPaint();}
 
 /* ================= timer + stages ================= */
 function fillTimer(){
@@ -1556,9 +1740,7 @@ function fillStages(){
         else if(k==='sec'){const v=parseMmss(e.target.value);s.sec=v===null?0:clamp(v,0,21600);}
         else if(k==='col')s.col=e.target.value;
         else if(k==='name')s.name=e.target.value.trim().slice(0,20);}
-      if(cfg.max.hz>0)s.hz=Math.min(s.hz,cfg.max.hz);
-      if(cfg.max.pw>0)s.pw=Math.min(s.pw,cfg.max.pw);
-      fillStages();touch();slidersPaint();});
+      clampAll();slidersPaint();});
   }
   for(let i=0;i<5;i++){
     const row=host.children[i+1],s=cfg.run.stages[i];
@@ -1920,7 +2102,7 @@ function fillFormulas(){
     '<div class="small mut mt8">'+f[2]+'</div></div>').join('');
 }
 /* ================= measure tab ================= */
-const SCOPE={ch:0,ms:1000,hold:false,wave:null,fold:null,spec:null,t1:0,t2:0,t3:0};
+const SCOPE={ch:0,ms:1000,hold:false,wave:null,fold:null,spec:null};
 $('#scopeSrc').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   SCOPE.ch=Number(b.dataset.ch);
   $$('#scopeSrc button').forEach(x=>x.classList.toggle('on',x===b));
@@ -1933,17 +2115,42 @@ $('#scopeHold').onclick=()=>{SCOPE.hold=!SCOPE.hold;
   $('#scopeHold').textContent=SCOPE.hold?'Resume':'Hold';
   $('#scopeHold').classList.toggle('pri',SCOPE.hold);};
 
+/* The three measurement payloads used to be polled by three independent timers (300 / 700 / 900 ms),
+   which guarantees they overlap - and the board serves one request at a time, so everything else
+   queued behind them. They share one poller now: at most one measurement request is ever in flight,
+   it yields to anything the user just did, and it stops entirely off the Measure tab. */
+let measTimer=0,measTurn=0;
 function measureKick(){
-  scopeTick();foldTick();specTick();renderMeasure();
+  clearTimeout(measTimer);
+  measTurn=0;
+  measLoop();
+  renderMeasure();
 }
-async function scopeTick(){
-  clearTimeout(SCOPE.t1);
-  if(TAB==='measure'&&DEV.on&&!SCOPE.hold&&!document.hidden){
-    const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
-    if(r&&r.n)SCOPE.wave=r;
-    scopeDraw();
+async function measLoop(){
+  clearTimeout(measTimer);
+  let wait=350;
+  if(TAB!=='measure'||!DEV.on||document.hidden){
+    wait=1200;
+  }else if(BUSY.n>0){
+    wait=120;                                   /* a command is in flight: come back in a moment */
+  }else{
+    const turn=measTurn++%4;                    /* the scope twice as often as the other two */
+    if(turn===0||turn===2){
+      if(!SCOPE.hold){
+        const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
+        if(r&&r.n)SCOPE.wave=r;
+      }
+      scopeDraw();
+      wait=SCOPE.ms>=3000?500:250;
+    }else if(turn===1){
+      SCOPE.fold=await apiQuiet('/api/fold');
+      foldDraw();
+    }else{
+      SCOPE.spec=await apiQuiet('/api/spec');
+      specDraw();
+    }
   }
-  SCOPE.t1=setTimeout(scopeTick,TAB==='measure'?(SCOPE.ms>=3000?600:300):2000);
+  measTimer=setTimeout(measLoop,wait);
 }
 function scopeDraw(){
   const r=SCOPE.wave;
@@ -1951,14 +2158,6 @@ function scopeDraw(){
   drawChart($('#chScope'),{n:r.n,series:[{ys:r.mn,ys2:r.mx,color:SCOPE.ch===2?cssVar('--warn'):cssVar('--acc')}],
     x0:-r.ms/1000,x1:0,xu:'s',zero:false});
   $('#scopeCap').textContent=(SCOPE.ch===2?'dB/dt, mT/s':'|B|, µT')+' · '+fmt(r.fs/1000,1)+' kS/s'+(SCOPE.hold?' · held':'');
-}
-async function foldTick(){
-  clearTimeout(SCOPE.t2);
-  if(TAB==='measure'&&DEV.on&&!document.hidden){
-    SCOPE.fold=await apiQuiet('/api/fold');
-    foldDraw();
-  }
-  SCOPE.t2=setTimeout(foldTick,700);
 }
 function foldDraw(){
   const r=SCOPE.fold,cv=$('#chFold');
@@ -1987,14 +2186,6 @@ function foldDraw(){
   if(model)series.push({ys:model,color:cssVar('--acc2'),dash:[5,4],width:1.3});
   drawChart(cv,{n:r.n,series,x0:0,x1:r.per/1000,xu:'ms',zero:true});
   $('#foldCap').textContent='µT across one period · '+r.cyc+' cycles folded';
-}
-async function specTick(){
-  clearTimeout(SCOPE.t3);
-  if(TAB==='measure'&&DEV.on&&!document.hidden){
-    SCOPE.spec=await apiQuiet('/api/spec');
-    specDraw();
-  }
-  SCOPE.t3=setTimeout(specTick,900);
 }
 function specDraw(){
   const r=SCOPE.spec,cv=$('#chSpec');
@@ -2082,6 +2273,30 @@ function fillSafety(){
   set('s_fetRate',unitF()?cfg.safe.fetRate:cfg.safe.fetRate*5/9);
   $('#s_on').checked=cfg.safe.on;$('#s_needReset').checked=cfg.safe.needReset;$('#s_needProbe').checked=cfg.safe.needProbe;
   $('#bypassNote').classList.toggle('hide',cfg.safe.on);
+  $('#s_magAp').checked=cfg.safe.magAp;
+  const si=(id,v)=>{const el=$('#'+id);if(el!==document.activeElement)el.value=v;};
+  si('s_magUt',Math.round(cfg.safe.magUt));si('s_magSec',Math.round(cfg.safe.magSec));
+  magPaint();
+}
+// live field against the threshold, so the magnet position can be found before relying on it
+function magPaint(){
+  const el=$('#magNow');
+  if(!el)return;
+  const zn=$('#magZeroNote');
+  if(!ST){el.textContent='—';if(zn)zn.classList.add('hide');return;}
+  const zeroed=ST.z0===1||ST.z1===1;
+  if(zn)zn.classList.toggle('hide',!cfg.safe.magAp||zeroed);
+  // only the zeroed channels count, the same rule the firmware applies
+  let b=0;
+  if(ST.z0===1)b=Math.max(b,Math.abs(ST.b0||0));
+  if(ST.z1===1)b=Math.max(b,Math.abs(ST.b1||0));
+  const armed=ST.mga===1,over=b>=cfg.safe.magUt;
+  const u=fmtUT(b);
+  el.textContent=(zeroed?u[0]+' '+u[1]:'no zeroed sensor')+
+    (!cfg.safe.magAp?' · switched off':!zeroed?' · not armed':
+      !armed?' · not armed (already on its own access point)':
+      over?' · over the threshold, held '+fmt(ST.mgh||0,1)+' s of '+Math.round(cfg.safe.magSec):' · under the threshold');
+  el.style.color=cfg.safe.magAp&&armed&&over?'var(--warn)':'';
 }
 $('#unitSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   store('mg-unit',b.dataset.u);fillSafety();renderState();});
@@ -2092,6 +2307,9 @@ $('#s_fetRate').addEventListener('change',e=>{const v=Number(e.target.value);cfg
 $('#s_on').addEventListener('change',e=>{cfg.safe.on=e.target.checked;fillSafety();touch();});
 $('#s_needReset').addEventListener('change',e=>{cfg.safe.needReset=e.target.checked;touch();});
 $('#s_needProbe').addEventListener('change',e=>{cfg.safe.needProbe=e.target.checked;touch();});
+$('#s_magAp').addEventListener('change',e=>{cfg.safe.magAp=e.target.checked;fillSafety();touch();});
+$('#s_magUt').addEventListener('change',e=>{cfg.safe.magUt=clamp(Number(e.target.value)||3000,200,100000);fillSafety();touch();});
+$('#s_magSec').addEventListener('change',e=>{cfg.safe.magSec=clamp(Number(e.target.value)||5,1,60);fillSafety();touch();});
 $('#safeSaveDef').onclick=()=>{store('mg-safe-def',cfg.safe);
   $('#safeSaveDef').textContent='Saved ✓';setTimeout(()=>$('#safeSaveDef').textContent='Save as my defaults',1200);};
 $('#safeLoadDef').onclick=()=>{const d=load('mg-safe-def',null);
@@ -2185,7 +2403,7 @@ function failNote(){
   const w=WS.why;
   if(!w)return 'Tap Connect. The first time, the phone asks to find devices on the local network - allow it.';
   if(w.kind==='timeout')return 'The secure link did not answer within 12 s at '+w.url+
-    '. Check that this phone is on the Magneto Wi-Fi (or the home network, if the device joined one), '+
+    '. Check that this phone is on the Magneto Wi-Fi (or the local network, if the device joined one), '+
     'and that Local Network permission is allowed for this app.';
   if(w.kind==='closed'&&w.ms<3000)return 'The device answered, then the phone closed the link after '+w.ms+
     ' ms - that means the certificate is not trusted yet. Open http://192.168.4.1 in Safari on this phone, '+
@@ -2195,14 +2413,23 @@ function failNote(){
     '. If this phone has never trusted the device certificate, open http://192.168.4.1 once and install it '+
     'from Settings > Connection.';
 }
+/* This runs on every status poll (connRender), so it must not rebuild the card each time: that
+   would throw away whatever is half-typed in the Wi-Fi boxes and re-arm the two-tap buttons. Only a
+   change in what the card actually shows rebuilds it, and never while one of its fields has focus. */
+let connKey='';
 function renderConnCard(){
   const host=$('#connBody');
   if(!host)return;
+  const key=[WS_OK?WS.target:'',DEV.on?1:0,CONN.busy?1:0,ONDEV?1:0,(WS.why&&WS.why.kind)||'',
+    NET?[NET.wanted,NET.radio,NET.fail?1:0,NET.ip,NET.ssid,NET.hasPass?1:0,NET.why||'',NET.updAlt?1:0].join('|'):'-'].join('~');
+  if(key===connKey&&host.childElementCount)return;
+  if(host.contains(document.activeElement))return;      // someone is typing in it
+  connKey=key;
   let h='';
   if(WS_OK){
     h+='<div class="row"><div class="lbl">Reach the device</div><div class="seg" id="tgtSeg">'+
       Object.keys(TARGETS).map(k=>'<button data-k="'+k+'" class="'+(WS.target===k?'on':'')+'">'+
-        (k==='home'?'Home':'Direct')+'</button>').join('')+'</div></div>';
+        (k==='home'?'Local':'Direct')+'</button>').join('')+'</div></div>';
     h+='<div class="flex mt8"><button class="btn sm pri" id="connGo">'+
       (DEV.on?'Connected ✓':(CONN.busy?'Connecting…':'Connect'))+'</button>'+
       '<span class="small mut">wss://'+TARGETS[WS.target].host+'/ws</span></div>';
@@ -2224,15 +2451,30 @@ function renderConnCard(){
       'Open it from the device at http://192.168.4.1, or install it from GitHub Pages.</div>';
   }
   if(NET){
-    h+='<div class="kv mt8"><span class="mut">Mode wanted</span><b>'+(NET.wanted==='sta'?'Home network':'Own access point')+'</b></div>'+
-      '<div class="kv"><span class="mut">Radio now</span><b>'+(NET.radio==='sta'?'home network, '+NET.ip:'AP, '+NET.ip)+
-      (NET.fail?' · join failed, fell back':'')+'</b></div>';
-    h+='<div class="row mt8"><div class="lbl">Home Wi-Fi name</div><input class="txt" id="n_ssid" style="max-width:190px" value=""></div>'+
-      '<div class="row"><div class="lbl">Password</div><input class="txt" id="n_pass" type="password" style="max-width:190px" placeholder="'+(NET.hasPass?'(saved)':'')+'"></div>'+
-      '<div class="flex mt8"><button class="btn sm" id="netSta">Join home network</button>'+
-      '<button class="btn sm ghost" id="netAp">Own access point</button></div>'+
-      '<div class="small mut mt8">Either way the page stays reachable: http://192.168.4.1 on its own Wi-Fi, '+
-      'http://magneto.local on the home network. Changing the mode reboots the device.</div>';
+    const why={magnet:'A magnet put it here - the saved local network was left behind on purpose. '+
+        'Turn Local Wi-Fi back on below when you want it to rejoin.',
+      join:'It could not join “'+(NET.ssid||'the saved network')+'” at boot, so it is hosting its own Wi-Fi instead. '+
+        'Check the name and password below; the next boot tries again.',
+      gone:'“'+(NET.ssid||'The saved network')+'” stopped answering while it was running, so it switched to its own '+
+        'Wi-Fi so you could still reach it. It rejoins at the next boot.'}[NET.why||''];
+    h+='<div class="kv mt8"><span class="mut">Wanted</span><b>'+(NET.wanted==='sta'?'Local network':'Own access point')+'</b></div>'+
+      '<div class="kv"><span class="mut">Radio now</span><b>'+(NET.radio==='sta'?'local network, '+NET.ip:
+        (NET.ap||'Magneto')+', '+NET.ip)+'</b></div>';
+    if(why)h+='<div class="note small">'+why+'</div>';
+    h+='<div class="row mt8"><div class="lbl">Local Wi-Fi<span class="small mut">2.4 GHz: a router, a guest '+
+      'network or a phone hotspot</span></div><input class="txt" id="n_ssid" style="max-width:190px" value="" '+
+      'autocapitalize="off" autocorrect="off" spellcheck="false"></div>'+
+      '<div class="row"><div class="lbl">Password<span class="small mut">leave empty for an open network</span></div>'+
+      '<input class="txt" id="n_pass" type="password" style="max-width:190px" placeholder="'+(NET.hasPass?'(saved)':'')+'"></div>'+
+      '<div class="row"><div class="lbl">Join it at boot<span class="small mut">off = always host '+
+      (NET.ap||'Magneto')+'</span></div><span class="switch"><input type="checkbox" id="n_sta"'+
+      (NET.wanted==='sta'?' checked':'')+'><i></i></span></div>'+
+      '<div class="flex mt8"><button class="btn sm pri" id="netSave">Save Wi-Fi</button>'+
+      '<button class="btn sm" id="netGo">Save and reboot</button></div>'+
+      '<div class="small mut mt8">This is also the network the online update uses, unless you give the update one of '+
+      'its own below. If it is not there when the device boots - or it disappears while it is running - the device '+
+      'hosts <b>'+(NET.ap||'Magneto')+'</b> at http://192.168.4.1 instead, so it is never out of reach. On the local '+
+      'network it answers at http://magneto.local. Only the mode change needs a reboot.</div>';
   }
   host.innerHTML=h;
   const tg=$('#tgtSeg');
@@ -2242,13 +2484,32 @@ function renderConnCard(){
   const cg=$('#connGo');
   if(cg)cg.onclick=()=>{wsDrop('retry');DEV.on=false;DEV.polling=false;CONN.n=0;devConnect(true);};
   const stBtn=$('#secTest');if(stBtn)stBtn.onclick=secTest;
-  const ns=$('#netSta');if(ns)ns.onclick=async()=>{
+  // Saving the credentials and changing the mode are the same call; only a mode change needs the
+  // reboot, so "Save Wi-Fi" keeps the current mode and does not restart anything.
+  const netBody=(mode,reboot)=>{
     const ssid=$('#n_ssid').value.trim(),pass=$('#n_pass').value;
-    if(!ssid&&!(NET&&NET.ssid))return;
-    const q=new URLSearchParams({mode:'sta'});if(ssid)q.set('ssid',ssid);if(pass)q.set('pass',pass);
-    twoTap(ns,async()=>{await apiQuiet('/api/net',{method:'POST',form:true,body:q.toString()});},'Reboot into home Wi-Fi?');};
-  const na=$('#netAp');if(na)na.onclick=()=>twoTap(na,async()=>{
-    await apiQuiet('/api/net',{method:'POST',form:true,body:'mode=ap'});},'Reboot into AP mode?');
+    const q=new URLSearchParams({mode});
+    q.set('ssid',ssid);
+    if(pass)q.set('pass',pass);
+    if(reboot)q.set('reboot','1');
+    return q.toString();};
+  const nsv=$('#netSave');
+  if(nsv)nsv.onclick=async()=>{
+    const want=$('#n_sta').checked?'sta':'ap';
+    if(want==='sta'&&!$('#n_ssid').value.trim()){nsv.textContent='Name first';setTimeout(()=>nsv.textContent='Save Wi-Fi',1400);return;}
+    const keep=NET&&NET.wanted==='sta'?'sta':'ap';
+    const r=await apiQuiet('/api/net',{method:'POST',form:true,body:netBody(keep,false)});
+    nsv.textContent=r&&r.ok?'Saved ✓':'Failed';
+    setTimeout(()=>{nsv.textContent='Save Wi-Fi';NET=null;netRefresh();},1400);};
+  const ng=$('#netGo');
+  if(ng)ng.onclick=()=>{
+    const want=$('#n_sta').checked?'sta':'ap';
+    if(want==='sta'&&!$('#n_ssid').value.trim()){ng.textContent='Name first';setTimeout(()=>ng.textContent='Save and reboot',1400);return;}
+    twoTap(ng,async()=>{
+      DEV.rebooting=true;
+      await apiQuiet('/api/net',{method:'POST',form:true,body:netBody(want,true)});
+      setTimeout(()=>{DEV.rebooting=false;NET=null;kick();},4000);
+    },want==='sta'?'Reboot and join it?':'Reboot into its own Wi-Fi?');};
   if(NET&&$('#n_ssid'))$('#n_ssid').value=NET.ssid||'';
 }
 async function secTest(){
@@ -2292,16 +2553,32 @@ async function renderUpdateCard(){
     h+=i.last==='ok'?'<div class="note ok">Last online update: installed'+(i.from?' (was v'+i.from+')':'')+'.</div>'
       :'<div class="note bad">Last online update failed: '+(UPD_ERR[i.last]||i.last)+'</div>';
   }
-  h+='<div class="row"><div class="lbl">Wi-Fi name<span class="small mut">used only during the update</span></div>'+
-    '<input class="txt" id="u_ssid" style="max-width:180px" value="'+(i?String(i.ssid||'').replace(/"/g,'&quot;'):'')+'"></div>'+
-    '<div class="row"><div class="lbl">Password</div><input class="txt" id="u_pass" type="password" style="max-width:180px" placeholder="'+(i&&i.hasPass?'(saved)':'')+'"></div>';
+  // One network by default - the Local Wi-Fi from Settings > Connection - with a switch for the case
+  // where the update needs a different one (the device normally sits on a network with no internet,
+  // or the update should run over a phone hotspot).
+  const useAlt=!!(i&&i.useAlt);
+  const esc=v=>String(v||'').replace(/"/g,'&quot;');
+  h+='<div class="row"><div class="lbl">Update over<span class="small mut">the device leaves its own Wi-Fi, '+
+    'joins this network, then comes back</span></div><b class="small">'+
+    (i&&i.ssid?esc(i.ssid)+(useAlt?' (update Wi-Fi)':' (Local Wi-Fi)'):'no network saved')+'</b></div>';
+  h+='<div class="row"><div class="lbl">Use a separate update Wi-Fi<span class="small mut">off = use the Local Wi-Fi '+
+    'under Connection'+(i&&i.local?' (“'+esc(i.local)+'”)':'')+'</span></div>'+
+    '<span class="switch"><input type="checkbox" id="u_alt"'+(useAlt?' checked':'')+'><i></i></span></div>';
+  h+='<div id="u_altRows"'+(useAlt?'':' class="hide"')+'>'+
+    '<div class="row"><div class="lbl">Update Wi-Fi name<span class="small mut">needs internet; 2.4 GHz</span></div>'+
+    '<input class="txt" id="u_ssid" style="max-width:180px" autocapitalize="off" autocorrect="off" spellcheck="false" value="'+
+    (i?esc(i.altSsid):'')+'"></div>'+
+    '<div class="row"><div class="lbl">Password</div><input class="txt" id="u_pass" type="password" style="max-width:180px" placeholder="'+
+    (i&&i.altHasPass?'(saved)':'')+'"></div></div>';
+  if(!useAlt&&!(i&&i.local))h+='<div class="note small">No Local Wi-Fi saved yet. Add one under Connection above, '+
+    'or switch on a separate update Wi-Fi here.</div>';
   h+='<details class="fold"><summary>GitHub source</summary><div>'+
     '<div class="row"><div class="lbl">Repository</div><input class="txt" id="u_repo" style="max-width:220px" value="'+(i?i.repo:'combsbw/magneto')+'"></div>'+
     '<div class="row"><div class="lbl">Token<span class="small mut">only for a private repo</span></div>'+
     '<input class="txt" id="u_tok" type="password" style="max-width:220px" placeholder="'+(i&&i.hasToken?'(saved)':'none')+'"></div></div></details>';
   h+='<div class="flex mt8"><button class="btn sm" id="updSave">Save</button>'+
     '<button class="btn sm pri" id="updGo">Update now</button><span class="updpct" id="updMsg"></span></div>';
-  h+='<div class="note small" id="updExplain">Update now: the device leaves this Wi-Fi, joins the network above, pulls the newest build from '+
+  h+='<div class="note small" id="updExplain">Update now: the device leaves this Wi-Fi, joins the network named above, pulls the newest build from '+
     'GitHub, installs it and restarts. Watch the LED: amber = connecting (1-3 blinks for the step), '+
     'progress color = downloading, solid green = done, red blinks = the failure number.</div>';
   if(ONDEV)h+='<div class="row mt8"><div class="lbl">Firmware file<span class="small mut">magneto.ota.bin from the Releases page</span></div>'+
@@ -2310,12 +2587,28 @@ async function renderUpdateCard(){
   host.innerHTML=h;
   $('#updSave').onclick=updSaveNow;
   $('#updGo').onclick=updGo;
+  const ua=$('#u_alt');
+  if(ua)ua.onchange=async()=>{
+    const on=ua.checked;
+    $('#u_altRows').classList.toggle('hide',!on);
+    const r=await apiQuiet('/api/update/save',{method:'POST',form:true,body:'useAlt='+(on?1:0)});
+    if(!r){                                    // the device did not take it: put the switch back
+      ua.checked=!on;
+      $('#u_altRows').classList.toggle('hide',on);
+      $('#updMsg').textContent='Could not save that.';
+      return;}
+    if(UPD.info)UPD.info.useAlt=on;            // re-render from what we know, without a refetch
+    renderUpdateCard();};
   const fg=$('#fwGo');if(fg)fg.onclick=fwUpload;
 }
 async function updSaveNow(){
   const q=new URLSearchParams();
-  q.set('ssid',$('#u_ssid').value.trim());
-  const pass=$('#u_pass').value;if(pass)q.set('pass',pass);
+  const ua=$('#u_alt');
+  q.set('useAlt',ua&&ua.checked?'1':'0');
+  if(ua&&ua.checked){
+    q.set('altSsid',$('#u_ssid')?$('#u_ssid').value.trim():'');
+    const pass=$('#u_pass')?$('#u_pass').value:'';if(pass)q.set('altPass',pass);
+  }
   q.set('repo',$('#u_repo')?$('#u_repo').value.trim():'');
   const tok=$('#u_tok')?$('#u_tok').value:'';if(tok)q.set('token',tok);
   const r=await apiQuiet('/api/update/save',{method:'POST',form:true,body:q.toString()});
@@ -2325,7 +2618,10 @@ async function updSaveNow(){
 async function updGo(){
   const b=$('#updGo');
   if(UPD.busy)return;
-  if(!$('#u_ssid').value.trim()){$('#updMsg').textContent='Enter the Wi-Fi name first.';return;}
+  const ua=$('#u_alt');
+  const haveNet=ua&&ua.checked?($('#u_ssid')&&$('#u_ssid').value.trim()):(UPD.info&&UPD.info.local);
+  if(!haveNet){$('#updMsg').textContent=ua&&ua.checked?'Enter the update Wi-Fi name first.':
+    'Add a Local Wi-Fi under Connection first, or switch on a separate update Wi-Fi.';return;}
   twoTap(b,async()=>{
     UPD.busy=true;$('#updMsg').textContent='Starting…';
     try{await updSaveNow();await api('/api/update/start',{method:'POST'});}
@@ -2362,13 +2658,18 @@ function fwUpload(){
 }
 
 /* ================= settings: device ================= */
+let devKey='';
 function renderDevice(){
   const host=$('#devBody');
   if(!host)return;
   const s=ST;
+  const key=s?[s.ver,s.net,s.fail?1:0,Math.round(s.up),Math.round(s.heap/4096),s.rssi,s.rst,s.bo,
+    Math.round(s.fs),s.ps,s.fftn].join('|'):'-';
+  if(key===devKey&&host.childElementCount)return;       // 1 Hz innerHTML churn is visible jank
+  devKey=key;
   host.innerHTML=s?(
     '<div class="kv"><span class="mut">Firmware</span><b>v'+s.ver+'</b></div>'+
-    '<div class="kv"><span class="mut">Network</span><b>'+(s.net==='sta'?'home network':'own AP')+(s.fail?' (join failed)':'')+'</b></div>'+
+    '<div class="kv"><span class="mut">Network</span><b>'+(s.net==='sta'?'local network':'own access point')+(s.fail?' (fell back)':'')+'</b></div>'+
     '<div class="kv"><span class="mut">Up</span><b>'+fmtSec(s.up)+'</b></div>'+
     '<div class="kv"><span class="mut">Free heap</span><b>'+Math.round(s.heap/1024)+' kB</b></div>'+
     (s.net==='sta'?'<div class="kv"><span class="mut">Signal</span><b>'+s.rssi+' dBm</b></div>':'')+
