@@ -1673,11 +1673,16 @@ function drvChkPaint(){
     el.textContent=want>0?('ready: '+fmtHzV(curHz())+' Hz · '+Math.round(want)+' µs when started'):'coil parked (0 Hz)';
     return;}
   const dHz=Math.abs((ST.hz||0)-curHz()),dPw=Math.abs((ST.pw||0)-pwFor(curHz(),curPw(),cfg.max.pw));
-  const bad=dHz>0.051||dPw>1.5;
+  // the device also reports the widest pulse it would allow right now; if that disagrees with the
+  // top of our slider, the page is drawing a scale the coil does not share - say so loudly
+  const devMax=ST.pwmax||0,uiMax=pwFor(ST.hz||curHz(),PW_MAX,cfg.max.pw);
+  const maxBad=devMax>0&&Math.abs(devMax-uiMax)>1.5;
+  const bad=dHz>0.051||dPw>1.5||maxBad;
   el.classList.toggle('bad',bad);
   el.textContent=(bad?'⚠ device is driving ':'device confirms ')+fmtHzV(ST.hz||0)+' Hz · '+
     Math.round(ST.pw||0)+' µs · duty '+fmt(ST.duty||0,3)+'%'+
-    (bad?' - the sliders say '+fmtHzV(curHz())+' Hz · '+Math.round(curPw())+' µs':'');
+    (dHz>0.051||dPw>1.5?' - the sliders say '+fmtHzV(curHz())+' Hz · '+Math.round(curPw())+' µs':'')+
+    (maxBad?' - and its limit is '+Math.round(devMax)+' µs, not '+Math.round(uiMax)+' µs':'');
 }
 function slidersPaint(){if(!VSH.busy())VSH.paint();if(!VSP.busy())VSP.paint();dutyPaint();drvChkPaint();}
 
