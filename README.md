@@ -39,8 +39,10 @@ the defaults instead of bricking the board.
   than its own period, so no setting can hold the gate on continuously - raising the frequency
   pulls a too-wide pulse down with it, and the slider says which limit is binding. The ceiling and
   the period are applied in `mg::pwFor()`, which the page mirrors exactly; `make test` checks both
-  sides agree and that no slider position can exceed the ceiling at any frequency. The device
-  reports the frequency and pulse width it is actually driving, shown under the sliders.
+  sides agree and that no slider position can exceed the ceiling at any frequency. Under the sliders
+  the board reports the on-time and period read back off the pulse timer itself - what the ISR is
+  really producing, not what the plan asked for - and the page flags any disagreement with the
+  sliders or with its own idea of the limit.
 - **Plans**: up to 5 stages (frequency, pulse width, length, LED color each), an optional repeat of
   a span of stages, timer chips or open-ended runs, and named setups stored on the board so every
   phone sees the same list.
