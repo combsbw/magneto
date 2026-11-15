@@ -742,89 +742,22 @@ $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b
 });
 
 /* ================= device link =================
-   On a page the board serves (plain http at any private address, or magneto.local) these are
-   ordinary fetch calls to the same origin. On the installed app (GitHub Pages, https) they travel
-   over one secure WebSocket, wss://<board>/ws, because an https page may not call plain http:
-     browser -> board   "<id> <METHOD> <path>[ f]\n<body>"     (" f" = form-encoded body)
-     board -> browser   "<id> <status>\n<body>"
-   Every call carries its own timeout, and the ones that are safe to repeat are hedged - a second
-   request goes out if the first is slow - because the board answers one connection at a time and
-   a single stalled request must never be able to wedge the page. */
+   The board serves this page and answers it on the same origin, over plain http, so every call is
+   an ordinary fetch. There is no secure socket, no certificate, and no copy of the page hosted
+   anywhere else - nothing to negotiate, fall back from, or get wedged on.
+
+   Every call still carries its own timeout, and the ones that are safe to repeat are hedged - a
+   second request goes out if the first is slow - because the board answers one connection at a
+   time and a single stalled request must never be able to wedge the page. */
 const HOSTN=location.hostname;
-const DEV_LIKE=/^https?:$/.test(location.protocol)&&(HOSTN==='magneto.local'||HOSTN==='localhost'||
-  HOSTN==='127.0.0.1'||/\.local$/.test(HOSTN)||/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(HOSTN));
-const WS_OK=!DEV_LIKE&&/^https?:$/.test(location.protocol)&&typeof WebSocket==='function';
-const ONDEV=DEV_LIKE&&location.protocol==='http:';
-const TARGETS={home:{name:'Local network',host:'magneto.local'},ap:{name:'Magneto Wi-Fi',host:'192.168.4.1'}};
+const DEV_LIKE=location.protocol==='http:';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 const DEV={on:false,fails:0,polling:false,rebooting:false,net:'',fail:false};
 const CONN={busy:false,n:0,t:0};
-const WS={sock:null,opening:null,abort:null,why:null,id:0,wait:new Map(),
-  target:lsGet('mg.target')==='ap'?'ap':'home',auto:lsGet('mg.auto')==='1'};
-const devHost=()=>WS_OK?TARGETS[WS.target].host:location.host;
+const devHost=()=>location.host;
 
-function wsDrop(why){
-  const s=WS.sock,ab=WS.abort;WS.sock=null;WS.opening=null;WS.abort=null;
-  if(ab)ab(new Error(why||'closed'));
-  if(s){s.onopen=s.onmessage=s.onclose=s.onerror=null;try{s.close();}catch(e){}}
-  const err=new Error(why||'closed');
-  WS.wait.forEach(w=>{clearTimeout(w.t);w.rej(err);});WS.wait.clear();
-}
-function wsMsg(data){
-  if(typeof data!=='string')return;
-  const nl=data.indexOf('\n'),head=nl<0?data:data.slice(0,nl),body=nl<0?'':data.slice(nl+1);
-  const sp=head.indexOf(' ');if(sp<0)return;
-  const id=head.slice(0,sp),st=Number(head.slice(sp+1)),w=WS.wait.get(id);
-  if(!w)return;                                   /* a late answer to a call that already timed out */
-  WS.wait.delete(id);clearTimeout(w.t);
-  if(st>=200&&st<300){try{w.res(body?JSON.parse(body):null);}catch(e){w.rej(new Error('bad json'));}}
-  else{let m='http '+st;try{m=JSON.parse(body).err||m;}catch(e){}w.rej(Object.assign(new Error(m),{status:st}));}
-}
-function wsOpen(){
-  if(WS.sock&&WS.sock.readyState===1)return Promise.resolve(WS.sock);
-  if(WS.opening)return WS.opening;
-  const url='wss://'+TARGETS[WS.target].host+'/ws';
-  const pr=new Promise((res,rej)=>{
-    let s=null,done=false;
-    const fail=e=>{if(done)return;done=true;clearTimeout(to);
-      WS.why={kind:/timeout/.test(e.message)?'timeout':'refused',ms:Date.now()-t0,url};
-      if(WS.opening===pr)WS.opening=null;if(WS.sock===s)WS.sock=null;WS.abort=null;
-      if(s){s.onopen=s.onmessage=s.onclose=s.onerror=null;try{s.close();}catch(x){}}
-      rej(e);};
-    const t0=Date.now(),to=setTimeout(()=>fail(new Error('connect timeout')),12000);  /* outlives the iOS local-network prompt */
-    WS.abort=fail;
-    try{s=new WebSocket(url);}catch(e){fail(e);return;}
-    WS.sock=s;
-    s.onopen=()=>{if(done)return;done=true;clearTimeout(to);WS.opening=null;WS.abort=null;WS.why=null;res(s);};
-    s.onerror=()=>fail(new Error('socket'));
-    s.onclose=()=>{if(!done)fail(new Error('closed'));
-      else if(WS.sock===s){if(Date.now()-t0<3000)WS.why={kind:'closed',ms:Date.now()-t0,url};wsDrop('closed');}};
-    s.onmessage=ev=>wsMsg(ev.data);
-  });
-  WS.opening=pr;
-  return pr;
-}
-async function wsCall(path,opt){
-  opt=opt||{};
-  const ms=opt.timeout||6000;
-  const s=await wsOpen();
-  return new Promise((res,rej)=>{
-    const id=String(++WS.id);
-    const t=setTimeout(()=>{WS.wait.delete(id);rej(new Error('timeout'));},ms);
-    WS.wait.set(id,{res,rej,t});
-    try{s.send(id+' '+(opt.method||'GET')+' '+path+(opt.form?' f':'')+'\n'+(opt.body==null?'':String(opt.body)));}
-    catch(e){clearTimeout(t);WS.wait.delete(id);rej(e);}
-  });
-}
-/* a socket is reliable, so a failed call means the socket is suspect: open a fresh one and ask once more */
-async function wsHedged(path,opt){
-  opt=Object.assign({},opt||{});
-  const each=opt.timeout||6000;delete opt.timeout;delete opt.gap;delete opt.max;
-  try{return await wsCall(path,Object.assign({timeout:each},opt));}
-  catch(e){wsDrop('retry');return await wsCall(path,Object.assign({timeout:each},opt));}
-}
 function fetchOpts(opt){
   const o={method:opt.method||'GET',cache:'no-store'};
   if(opt.body!=null){o.body=opt.body;
@@ -833,7 +766,6 @@ function fetchOpts(opt){
 }
 function api(path,opt){
   opt=Object.assign({},opt||{});
-  if(WS_OK)return wsCall(path,opt);
   const ms=opt.timeout||4000;
   const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
   return fetch(path,Object.assign({signal:c.signal},fetchOpts(opt)))
@@ -846,7 +778,6 @@ function api(path,opt){
 /* One request that does not wait out a slow or lost first attempt: another starts after `gap`
    (up to `max`), and the first good answer wins. Only for calls that are safe to repeat. */
 function hedged(path,opt){
-  if(WS_OK)return wsHedged(path,opt);
   opt=Object.assign({},opt||{});
   const gap=opt.gap||700,max=opt.max||3,each=opt.timeout||3500;
   delete opt.gap;delete opt.max;delete opt.timeout;
@@ -879,10 +810,10 @@ function linkLabel(){
   if(DEV.on){
     if(DEV.net==='sta')return devHost();
     if(DEV.fail)return 'Magneto Wi-Fi (fallback)';
-    return ONDEV?'This device':TARGETS[WS.target].name;
+    return 'This device';
   }
   if(CONN.busy)return 'Connecting…';
-  return (DEV_LIKE||WS_OK)?'Not connected':'Standalone';
+  return 'Not connected';
 }
 function connRender(){
   const p=$('#connPill'),t=$('#connTxt');
@@ -902,7 +833,6 @@ async function devAttach(j){
   clockBase={t:j.t,at:Date.now(),run:j.s==='run',total:j.total};
   if(first){
     DEV.on=true;
-    if(WS_OK){WS.auto=true;lsSet('mg.auto','1');}   /* the app only goes looking once it has connected before */
     await cfgPull();
     presetsLoad();
     UPD.info=null;renderUpdateCard();
@@ -914,20 +844,17 @@ async function devAttach(j){
 }
 async function devConnect(manual){
   if(CONN.busy)return false;
-  if(WS_OK&&!manual&&!WS.auto)return false;
   if(DEV.on&&!manual)return true;
   CONN.busy=true;CONN.n++;
   clearTimeout(CONN.t);
   connRender();
   let ok=false;
   try{
-    if(WS_OK&&manual)wsDrop('retry');               /* a fresh socket, not one that may be dead */
-    const j=await hedged('/api/state',(DEV_LIKE||WS_OK)?{}:{max:1});
+    const j=await hedged('/api/state');
     if(j&&j.app==='magneto'){await devAttach(j);ok=true;}
   }catch(e){}
   CONN.busy=false;
-  if(!ok&&!DEV.on&&(DEV_LIKE||(WS_OK&&WS.auto)))
-    CONN.t=setTimeout(()=>devConnect(false),Math.min(1500+CONN.n*700,6000));
+  if(!ok&&!DEV.on)CONN.t=setTimeout(()=>devConnect(false),Math.min(1200+CONN.n*600,5000));
   connRender();
   return ok;
 }
@@ -2428,21 +2355,6 @@ $('#p_anode').addEventListener('change',e=>{cfg.pins.anode=e.target.checked;touc
 /* ================= settings: connection ================= */
 let NET=null;
 async function netRefresh(){NET=await apiQuiet('/api/net');renderConnCard();}
-function failNote(){
-  if(!WS_OK||DEV.on)return '';
-  const w=WS.why;
-  if(!w)return 'Tap Connect. The first time, the phone asks to find devices on the local network - allow it.';
-  if(w.kind==='timeout')return 'The secure link did not answer within 12 s at '+w.url+
-    '. Check that this phone is on the Magneto Wi-Fi (or the local network, if the device joined one), '+
-    'and that Local Network permission is allowed for this app.';
-  if(w.kind==='closed'&&w.ms<3000)return 'The device answered, then the phone closed the link after '+w.ms+
-    ' ms - that means the certificate is not trusted yet. Open http://192.168.4.1 in Safari on this phone, '+
-    'install the certificate from Settings > Connection, then switch it on under '+
-    'Settings > General > About > Certificate Trust Settings.';
-  return 'Could not open the secure link at '+w.url+
-    '. If this phone has never trusted the device certificate, open http://192.168.4.1 once and install it '+
-    'from Settings > Connection.';
-}
 /* This runs on every status poll (connRender), so it must not rebuild the card each time: that
    would throw away whatever is half-typed in the Wi-Fi boxes and re-arm the two-tap buttons. Only a
    change in what the card actually shows rebuilds it, and never while one of its fields has focus. */
@@ -2450,37 +2362,18 @@ let connKey='';
 function renderConnCard(){
   const host=$('#connBody');
   if(!host)return;
-  const key=[WS_OK?WS.target:'',DEV.on?1:0,CONN.busy?1:0,ONDEV?1:0,(WS.why&&WS.why.kind)||'',
+  const key=[DEV.on?1:0,CONN.busy?1:0,
     NET?[NET.wanted,NET.radio,NET.fail?1:0,NET.ip,NET.ssid,NET.hasPass?1:0,NET.why||'',NET.updAlt?1:0,
       NET.tx,NET.bo,NET.portal?1:0].join('|'):'-'].join('~');
   if(key===connKey&&host.childElementCount)return;
   if(host.contains(document.activeElement))return;      // someone is typing in it
   connKey=key;
   let h='';
-  if(WS_OK){
-    h+='<div class="row"><div class="lbl">Reach the device</div><div class="seg" id="tgtSeg">'+
-      Object.keys(TARGETS).map(k=>'<button data-k="'+k+'" class="'+(WS.target===k?'on':'')+'">'+
-        (k==='home'?'Local':'Direct')+'</button>').join('')+'</div></div>';
-    h+='<div class="flex mt8"><button class="btn sm pri" id="connGo">'+
-      (DEV.on?'Connected ✓':(CONN.busy?'Connecting…':'Connect'))+'</button>'+
-      '<span class="small mut">wss://'+TARGETS[WS.target].host+'/ws</span></div>';
-    const fn=failNote();
-    if(fn)h+='<div class="note small">'+fn+'</div>';
-  }else if(ONDEV){
-    h+='<div class="kv"><span class="mut">This page</span><b>served by the device over http</b></div>';
-    h+='<div class="note small">The installed app on your Home Screen reaches the device over a secure '+
-      'link, so this phone has to trust the device certificate once. Tap Install certificate, allow the '+
-      'profile, then open Settings and tap <b>Profile Downloaded</b> at the top and Install. Then go to '+
-      'Settings &gt; General &gt; About &gt; <b>Certificate Trust Settings</b> and switch Magneto on. '+
-      'If Profile Downloaded does not appear, tap Install certificate again - it only stays available for '+
-      'a few minutes. The trust survives firmware updates.</div>';
-    h+='<div class="flex mt8"><a class="btn sm pri" id="certBtn" href="/magneto.mobileconfig">Install certificate</a>'+
-      '<button class="btn sm" id="secTest">Test secure link</button></div>'+
-      '<div class="small mut mt8" id="secOut"></div>';
-  }else{
-    h+='<div class="note small">This page is not on the device network, so it runs standalone. '+
-      'Open it from the device at http://192.168.4.1, or install it from GitHub Pages.</div>';
-  }
+  h+='<div class="kv"><span class="mut">This page</span><b>'+
+    (DEV.on?'served by the device at '+location.host:'not reaching the device')+'</b></div>';
+  if(!DEV.on)h+='<div class="note small">Open this page from the device: <b>http://192.168.4.1</b> on its own '+
+    'Wi-Fi, or <b>http://magneto.local</b> once it has joined a local network. It is plain http and there is '+
+    'nothing to install or trust. Add it to your Home Screen from Safari\'s share menu and it opens full screen.</div>';
   if(NET){
     const why={magnet:'A magnet put it here - the saved local network was left behind on purpose. '+
         'Turn Local Wi-Fi back on below when you want it to rejoin.',
@@ -2523,13 +2416,6 @@ function renderConnCard(){
       'network it answers at http://magneto.local. Only the mode change needs a reboot.</div>';
   }
   host.innerHTML=h;
-  const tg=$('#tgtSeg');
-  if(tg)tg.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-    WS.target=b.dataset.k;lsSet('mg.target',WS.target);
-    wsDrop('switch');DEV.on=false;DEV.polling=false;CONN.n=0;devConnect(true);});
-  const cg=$('#connGo');
-  if(cg)cg.onclick=()=>{wsDrop('retry');DEV.on=false;DEV.polling=false;CONN.n=0;devConnect(true);};
-  const stBtn=$('#secTest');if(stBtn)stBtn.onclick=secTest;
   // Saving the credentials and changing the mode are the same call; only a mode change needs the
   // reboot, so "Save Wi-Fi" keeps the current mode and does not restart anything.
   const netBody=(mode,reboot)=>{
@@ -2577,49 +2463,6 @@ function renderConnCard(){
     if(r){NET=r;connKey='';renderConnCard();}};
   if(NET&&$('#n_ssid'))$('#n_ssid').value=NET.ssid||'';
 }
-async function secTest(){
-  const out=$('#secOut'),btn=$('#secTest');
-  if(!out)return;
-  btn.disabled=true;out.textContent='Testing…';
-  let i0=null;try{i0=await api('/api/secure',{timeout:4000});}catch(e){}
-  const t0=Date.now();
-  const res=await new Promise(r=>{
-    let s,to=setTimeout(()=>{try{s.close();}catch(e){}r('timeout');},10000);
-    try{s=new WebSocket('wss://'+location.hostname+'/ws');}catch(e){clearTimeout(to);r('error');return;}
-    s.onopen=()=>{clearTimeout(to);try{s.close();}catch(e){}r('open');};
-    s.onerror=()=>{clearTimeout(to);r('error');};
-  });
-  const ms=Date.now()-t0;
-  let i1=null;try{i1=await api('/api/secure',{timeout:4000});}catch(e){}
-  /* The counters say what actually happened, so the answer does not have to guess. opened going up
-     means the handshake finished and the socket was accepted - the certificate IS trusted, whatever
-     went wrong afterwards. refused going up means the socket opened but the page came from an
-     address the device does not accept. Neither moving means it never got that far, which is a
-     trust problem OR simply the Wi-Fi dropping mid-handshake - and saying "not trusted" for both is
-     how you end up reinstalling a certificate that was fine all along. */
-  const d=(a,b,k)=>(a&&b&&typeof a[k]==='number'&&typeof b[k]==='number')?b[k]-a[k]:null;
-  const dOpen=d(i0,i1,'opened'),dRef=d(i0,i1,'refused');
-  const seen=i1?(' The device has accepted '+i1.opened+' secure connection'+(i1.opened===1?'':'s')+' since it started'+
-    (dOpen!==null?', '+dOpen+' of them during this test.':'.')):'';
-  const lost=i1===null?' The device also stopped answering on http during the test, so the Wi-Fi itself dropped - fix that first.':'';
-  if(res==='open')out.textContent='Works: this phone trusts the certificate and the device answered over the secure link ('+ms+' ms).'+seen+
-    ' If the installed app still cannot connect, the cause is on the app side - its Local Network permission, or the Wi-Fi it is on.';
-  else if(i1&&!i1.running)out.textContent='The secure server is not running on the device. Reboot it and test again; if it stays this way, '+
-    'the certificate step did not finish at boot (watch the serial log).';
-  else if(dRef>0)out.textContent='The device refused this page: the socket opened, so the certificate is trusted, but the page was '+
-    'served from an address it does not accept. Open the app from the device at http://192.168.4.1, or from GitHub Pages.';
-  else if(dOpen>0)out.textContent='The certificate is trusted - the device accepted '+dOpen+' connection'+(dOpen===1?'':'s')+
-    ' during this test - but the link did not stay up ('+ms+' ms). That is the Wi-Fi dropping, not the certificate. '+
-    'Check Settings > Device: if Up keeps restarting, the device is rebooting; if brown-outs are counted, it is the supply.';
-  else if(res==='timeout')out.textContent='The secure link did not answer within 10 s.'+seen+lost+' Make sure you are on the device Wi-Fi and try again.';
-  else out.textContent='The link did not open ('+ms+' ms) and the device logged no connection attempt.'+seen+lost+
-    ' Two things look the same here: the certificate not being trusted, and the Wi-Fi dropping before the handshake finishes. '+
-    'Check Settings > Device first - if Up keeps resetting to a few seconds, fix that before touching the certificate. '+
-    'Otherwise install it above, then switch Magneto on under Settings > General > About > Certificate Trust Settings.';
-  btn.disabled=false;
-}
-
-/* ================= settings: update ================= */
 const UPD_ERR={e1:'Could not join the Wi-Fi network.',e2:'Joined, but no internet time (is the network online?).',
   e3:'Could not find the release on GitHub.',e4:'The download failed part way.',e5:'The new firmware did not flash.'};
 let UPD={info:null,busy:false,arm:0};
@@ -2661,7 +2504,7 @@ async function renderUpdateCard(){
   h+='<div class="note small" id="updExplain">Update now: the device leaves this Wi-Fi, joins the network named above, pulls the newest build from '+
     'GitHub, installs it and restarts. Watch the LED: amber = connecting (1-3 blinks for the step), '+
     'progress color = downloading, solid green = done, red blinks = the failure number.</div>';
-  if(ONDEV)h+='<div class="row mt8"><div class="lbl">Firmware file<span class="small mut">magneto.ota.bin from the Releases page</span></div>'+
+  h+='<div class="row mt8"><div class="lbl">Firmware file<span class="small mut">magneto.ota.bin from the Releases page</span></div>'+
     '<input type="file" id="fwFile" accept=".bin"></div>'+
     '<div class="flex"><button class="btn sm" id="fwGo">Upload</button><div class="bar grow"><i id="fwBar" style="width:0"></i></div></div>';
   host.innerHTML=h;
@@ -2719,7 +2562,6 @@ async function updGo(){
 async function waitDevice(tries){
   for(let i=0;i<tries;i++){
     await new Promise(r=>setTimeout(r,900));
-    if(WS_OK&&(!WS.sock||WS.sock.readyState!==1)){await devConnect(true);}
     const s=await apiQuiet('/api/state');
     if(s)return true;
   }

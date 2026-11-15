@@ -9,10 +9,9 @@
  *   Recovery: holding a magnet on either hall sensor for a few seconds while the board is on a local
  *             network reboots it into the access point, so it is never lost behind a network that
  *             moved or changed its password (Settings > Safety has the threshold and the hold time).
- *   Secure  : wss://magneto.local/ws or wss://192.168.4.1/ws for the installed web app (GitHub Pages),
- *             once the phone trusts the board's own certificate (tlshttps.cpp, /magneto.mobileconfig).
- *             The status poll and every command are answered inside the socket task, so a button
- *             press does not wait for a loopback trip through the port 80 server.
+ *   The app  : plain http, served by the board and nothing else - no https, no certificate, no copy
+ *             on GitHub Pages. "Add to Home Screen" from http://192.168.4.1 (or http://magneto.local
+ *             on a local network) installs it; the icon and manifest come out of flash too.
  *   Update  : ArduinoOTA on 3232, HTTP upload at /update, and the one-button online update that joins
  *             the local network (or a separate update network) and pulls the newest build from the
  *             GitHub "latest" release.
@@ -30,8 +29,8 @@
  * and need an explicit reset with a fresh in-range reading (both behaviors configurable).
  *
  * Files: engine.h (plan/stage engine, host-tested), config.h + json.h (settings), coil.cpp (1 us pulse
- * ISR), sense.cpp (DMA ADC: 2x hall + 2x NTC, FFT, phase fold), leds.cpp (patterns), tlshttps.cpp
- * (secure socket), ghupdate.h (GitHub release update), webui.h (the page, generated).
+ * ISR), sense.cpp (DMA ADC: 2x hall + 2x NTC, FFT, phase fold), leds.cpp (patterns),
+ * ghupdate.h (GitHub release update), webui.h (the page, icon and manifest, generated).
  */
 #include <WiFi.h>
 #include <WebServer.h>
@@ -58,9 +57,8 @@
 #include "webui.h"
 #include "netprobe.h"
 #include "ghupdate.h"
-#include "tlshttps.h"
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.3.0"
 #define STA_JOIN_MS 12000
 #define STA_LOST_MS 45000UL             // local network gone this long -> bring the access point up instead
 #define MDNS_POKE_MS 90000UL
@@ -259,9 +257,9 @@ static void sendState() {
 
 // ---- commands -------------------------------------------------------------------------------------------------------
 // One implementation behind two front doors: the port 80 handler (plain http, and anything the
-// secure socket relays) and the fast path inside the TLS task, which answers a button press without
-// a loopback trip through the web server. Plain arguments, no struct: the Arduino build inserts its
-// own prototypes at the top of this file, where a type declared further down would not exist yet.
+// http handler) and anything else that needs it. Plain arguments, no struct: the Arduino build
+// inserts its own prototypes at the top of this file, where a type declared further down would not
+// exist yet.
 //
 // Returns nullptr when the command was accepted, otherwise a short error code for the page.
 static const char* runCmd(const char* cmd, float argHz, float argPw, int argCh, const char* argW) {
@@ -372,6 +370,18 @@ static void handleRoot() {
   server.send_P(200, "text/html; charset=utf-8", (const char*)WEBUI_GZ, WEBUI_GZ_LEN);
 }
 
+// Everything "Add to Home Screen" needs, straight out of flash: the board is the only host.
+static void handleIcon() {
+  server.sendHeader("Cache-Control", "max-age=86400");
+  server.send_P(200, "image/png", (const char*)WEBUI_ICON, WEBUI_ICON_LEN);
+}
+
+static void handleManifest() {
+  server.sendHeader("Content-Encoding", "gzip");
+  server.sendHeader("Cache-Control", "max-age=86400");
+  server.send_P(200, "application/manifest+json", (const char*)WEBUI_MANIFEST_GZ, WEBUI_MANIFEST_GZ_LEN);
+}
+
 // ---- measurement payloads -------------------------------------------------------------------------------------------
 static char* bigBuf(size_t cap) {
   static char* buf = nullptr;
@@ -432,53 +442,6 @@ static void handleFold() {
   for (int i = 0; i < n; i++) p += snprintf(out + p, cap - p, "%s%.1f", i ? "," : "", bins[i]);
   snprintf(out + p, cap - p, "]}");
   sendJson(200, out);
-}
-
-// ---- iOS certificate profile ------------------------------------------------------------------------------------------
-static String pemBody(const String& pem) {
-  String o;
-  int i = 0;
-  while (i < (int)pem.length()) {
-    int j = pem.indexOf('\n', i);
-    if (j < 0) j = pem.length();
-    String line = pem.substring(i, j);
-    line.trim();
-    if (line.length() && line.indexOf("BEGIN ") < 0 && line.indexOf("END ") < 0) o += line;
-    i = j + 1;
-  }
-  return o;
-}
-
-static void handleCertProfile() {
-  if (!fsOk || !LittleFS.exists("/ca.crt")) { server.send(503, "text/plain", "certificate not ready"); return; }
-  File f = LittleFS.open("/ca.crt", "r");
-  if (!f) { server.send(503, "text/plain", "certificate not ready"); return; }
-  String b64 = pemBody(f.readString());
-  f.close();
-  if (!b64.length()) { server.send(500, "text/plain", "certificate unreadable"); return; }
-  String xml;
-  xml.reserve(b64.length() + 900);
-  xml += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-  xml += "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n";
-  xml += "<plist version=\"1.0\"><dict><key>PayloadContent</key><array><dict>";
-  xml += "<key>PayloadCertificateFileName</key><string>magneto.cer</string>";
-  xml += "<key>PayloadContent</key><data>";
-  xml += b64;
-  xml += "</data><key>PayloadDescription</key><string>Magneto local certificate</string>";
-  xml += "<key>PayloadDisplayName</key><string>Magneto</string>";
-  xml += "<key>PayloadIdentifier</key><string>local.magneto.ca</string>";
-  xml += "<key>PayloadType</key><string>com.apple.security.root</string>";
-  xml += "<key>PayloadUUID</key><string>b4e7c2d1-8f3a-4e60-9c15-000000000001</string>";
-  xml += "<key>PayloadVersion</key><integer>1</integer></dict></array>";
-  xml += "<key>PayloadDisplayName</key><string>Magneto</string>";
-  xml += "<key>PayloadIdentifier</key><string>local.magneto.profile</string>";
-  xml += "<key>PayloadRemovalDisallowed</key><false/>";
-  xml += "<key>PayloadType</key><string>Configuration</string>";
-  xml += "<key>PayloadUUID</key><string>b4e7c2d1-8f3a-4e60-9c15-000000000002</string>";
-  xml += "<key>PayloadVersion</key><integer>1</integer></dict></plist>\n";
-  server.sendHeader("Content-Disposition", "attachment; filename=\"magneto.mobileconfig\"");
-  server.sendHeader("Cache-Control", "no-store");
-  server.send(200, "application/x-apple-aspen-config", xml);
 }
 
 // ---- saved setups -------------------------------------------------------------------------------------------------
@@ -631,7 +594,6 @@ static void runWebUpdate() {
   otaBusy = true; updErr = 0; updPct = 0; updPhase = 1;
   Serial.println("online update: joining Wi-Fi");
 
-  tlsStop();
   server.stop();
   if (dnsOn) { dns.stop(); dnsOn = false; }
   ArduinoOTA.end();
@@ -903,7 +865,6 @@ static void startAp();
 // may be running and must not be interrupted. The page comes back at http://192.168.4.1.
 static void toAp(const char* why) {
   Serial.printf("local Wi-Fi lost (%s): starting the access point\n", why);
-  tlsStop();
   MDNS.end();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_OFF);
@@ -1071,28 +1032,6 @@ static const char* resetName(esp_reset_reason_t r) {
 
 static void onGotIp(arduino_event_id_t) { gotIpFlag = true; }
 
-// Port 443 carries only wss://<board>/ws. The state poll and the commands - the calls that decide
-// how quickly the page feels - are answered inside the TLS task. Everything else is repeated to the
-// handlers on port 80, which costs a loopback TCP connection and a few passes of loop().
-static int jsonState(const char*, char* buf, size_t cap) { lastApiMs = millis(); return stateJson(buf, cap); }
-
-static int jsonCmd(const char* qs, char* buf, size_t cap) {
-  char c[20], hz[16], pw[16], ch[8], w[8];
-  mg::qsParam(qs, "c", c, sizeof c);
-  mg::qsParam(qs, "hz", hz, sizeof hz);
-  mg::qsParam(qs, "pw", pw, sizeof pw);
-  mg::qsParam(qs, "ch", ch, sizeof ch);
-  mg::qsParam(qs, "w", w, sizeof w);
-  const char* err = runCmd(c, (float)atof(hz), (float)atof(pw), atoi(ch), w);
-  if (err) {                        /* the page reads the error out of the body, so 200 with ok:false */
-    int n = snprintf(buf, cap, "{\"ok\":false,\"err\":\"%s\"}", err);
-    return (n > 0 && (size_t)n < cap) ? n : -1;
-  }
-  return stateJson(buf, cap);
-}
-
-static const TlsJson TLS_JSON[] = {{"/api/state", 0, jsonState}, {"/api/cmd", 1, jsonCmd}};
-
 void setup() {
   setCpuFrequencyMhz(240);              // the DMA ADC, the FFT and the 1 us pulse ISR all want the full clock
   Serial.begin(115200);
@@ -1108,6 +1047,13 @@ void setup() {
   boCount = prefs.getUInt("bo", 0);
   if (rr == ESP_RST_BROWNOUT) { boCount++; prefs.putUInt("bo", boCount); }
   fsOk = LittleFS.begin(true);
+  // Builds before 0.3.0 kept a certificate authority and a server private key in here for the
+  // secure socket. There is no secure socket any more, so sweep them out rather than leave a dead
+  // private key sitting in flash.
+  if (fsOk) {
+    static const char* const stale[] = {"/ca.crt", "/ca.key", "/srv.crt", "/srv.key", "/srv.dates"};
+    for (const char* f : stale) if (LittleFS.exists(f)) { LittleFS.remove(f); Serial.printf("removed stale %s\n", f); }
+  }
   cfgLoad();
   applyHardware();
 
@@ -1140,15 +1086,9 @@ void setup() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/app", HTTP_GET, handleRoot);
-  server.on("/magneto.mobileconfig", HTTP_GET, handleCertProfile);
+  server.on("/icon.png", HTTP_GET, handleIcon);
+  server.on("/manifest.webmanifest", HTTP_GET, handleManifest);
   server.on("/api/state", HTTP_GET, sendState);
-  server.on("/api/secure", HTTP_GET, []() {
-    uint32_t o, r;
-    tlsStats(&o, &r);
-    char b[120];
-    snprintf(b, sizeof b, "{\"running\":%s,\"opened\":%u,\"refused\":%u,\"v\":\"%s\"}", tlsRunning() ? "true" : "false", (unsigned)o, (unsigned)r, FW_VERSION);
-    server.send(200, "application/json", b);
-  });
   server.on("/api/net", HTTP_GET, handleNetInfo);
   server.on("/api/net", HTTP_POST, handleNetPost);
   server.on("/api/power", HTTP_POST, handlePower);
@@ -1167,8 +1107,6 @@ void setup() {
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateData);
   server.onNotFound(handleNotFound);
   server.begin();
-  tlsRoutes(TLS_JSON, sizeof TLS_JSON / sizeof TLS_JSON[0]);
-  if (fsOk) tlsPrepare();          // runs on its own task; loop() starts the socket when it lands
 
   ArduinoOTA.setHostname(HOST_NAME);
   ArduinoOTA.setPort(OTA_PORT);
@@ -1193,9 +1131,6 @@ void loop() {
     gotIpFlag = false;
     mdnsPokeAt = millis() + MDNS_POKE_MS;
     mdnsPoke();
-  }
-  if (!tlsRunning() && tlsCertReady() && !otaBusy && !updPhase) {
-    if (tlsStart() && radioSta) MDNS.addService("wss", "tcp", 443);
   }
   if (updStartAt && (int32_t)(millis() - updStartAt) >= 0) { updStartAt = 0; runWebUpdate(); }
   if (cfgDirty && millis() - cfgDirtyAt > 2000) cfgSaveNow();

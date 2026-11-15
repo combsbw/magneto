@@ -1,6 +1,6 @@
 name: Build firmware
 
-# Compiles the sketch with the pinned ESP32 core (2.0.17) for the ESP32-S3, runs the host tests of the treatment engine,
+# Compiles the sketch with the pinned ESP32 core (2.0.17) for the ESP32-S3, runs the host tests,
 # and keeps the .bin files as a downloadable artifact. Every push to main also refreshes the "latest" release, so the
 # newest .bin files are always one click away on the Releases page (no tags to manage).
 on:
@@ -26,11 +26,12 @@ jobs:
       - name: Install ESP32 core 2.0.17
         run: make deps
 
-      - name: Rebuild the embedded web page and the Pages site
+      - name: Rebuild the embedded page, icon and manifest
         run: |
+          pip install --quiet pillow
+          python3 tools/make_icons.py
           python3 tools/embed_ui.py
-          python3 tools/build_pages.py
-          git diff --exit-code -- docs
+          git diff --exit-code -- webui.h icons
 
       - name: Compile (esp32:esp32:XIAO_ESP32S3)
         run: make build

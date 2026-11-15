@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Draw the Magneto icons (a pancake coil seen face-on) straight to PNG - no image libraries.
+"""Draw the Magneto icon (a pancake coil seen face-on) and write it as a compact palette PNG.
 
-Writes icons/icon-192.png and icons/apple-touch-icon.png (180x180). Rerun after changing the art.
+Writes icons/icon-192.png, which the firmware serves at /icon.png for "Add to Home Screen" - so it
+lives in flash and every byte counts. The art is flat rings, so 32 colours is visually identical to
+truecolour at about a quarter of the size. It is opaque and full-bleed on purpose: iOS and Android
+round and mask home-screen icons themselves, and Apple's guidance is not to hand them transparency.
+
+Rerun after changing the art.
 """
 import math
 import os
@@ -24,6 +29,8 @@ def lerp(a, b, t):
 
 def draw(size):
     px = bytearray(size * size * 4)
+    for i in range(3, len(px), 4):
+        px[i] = 255
     s = float(size)
     cx = cy = s / 2.0
     corner = s * 0.22
@@ -34,10 +41,7 @@ def draw(size):
     for y in range(size):
         for x in range(size):
             # rounded-square alpha mask
-            dx = max(abs(x - cx) - (s / 2 - corner), 0.0)
-            dy = max(abs(y - cy) - (s / 2 - corner), 0.0)
-            if math.hypot(dx, dy) > corner - 0.5:
-                continue
+            # no rounded-corner mask: the platforms mask it for us, and transparency hurts on iOS
             r = math.hypot(x - cx, y - cy)
             col = BG
             for frac, ring_col in rings:
@@ -58,20 +62,18 @@ def draw(size):
     return px
 
 
+COLORS = 32
+
+
 def write_png(path, size, px):
-    raw = b"".join(b"\x00" + bytes(px[y * size * 4:(y + 1) * size * 4]) for y in range(size))
-
-    def chunk(tag, data):
-        c = struct.pack(">I", len(data)) + tag + data
-        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-
-    with open(path, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n")
-        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)))
-        f.write(chunk(b"IDAT", zlib.compress(raw, 9)))
-        f.write(chunk(b"IEND", b""))
+    """Palette PNG. Pillow does the quantising and filter search; both beat a hand-rolled writer by
+    enough to matter when the result sits in the firmware image."""
+    from PIL import Image
+    im = Image.frombytes("RGBA", (size, size), bytes(px)).convert("RGB")
+    im.quantize(colors=COLORS, method=Image.MEDIANCUT).save(path, "PNG", optimize=True)
 
 
-for name, size in (("icon-192.png", 192), ("apple-touch-icon.png", 180)):
-    write_png(os.path.join(out_dir, name), size, draw(size))
-    print("icons/%s" % name)
+size = 192
+path = os.path.join(out_dir, "icon-192.png")
+write_png(path, size, draw(size))
+print("icons/icon-192.png: %d bytes, %d colours, %dx%d" % (os.path.getsize(path), COLORS, size, size))

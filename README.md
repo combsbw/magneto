@@ -5,13 +5,14 @@ staged treatment plans, two 49E hall sensors doing the actual field measurement 
 fold, FFT), two NTC thermistors running a latched thermal safety gate, and a status RGB + coil LED
 that tell the whole story with no phone attached.
 
-The control panel is one web page, published two ways:
+The control panel is one web page, and the board is the only thing that serves it - plain http, no
+certificate, no copy hosted anywhere else:
 
-- **On the device** - `http://192.168.4.1` on its own Wi-Fi (`Magneto`, open, captive portal), or
-  `http://magneto.local` once it joins your local network.
-- **Installed app** - https://combsbw.github.io/magneto/ - add it to the Home Screen. The installed
-  (https) app reaches the board over a secure WebSocket, `wss://magneto.local/ws` or
-  `wss://192.168.4.1/ws`, carrying the same API.
+- `http://192.168.4.1` on the board's own Wi-Fi (`Magneto`, open), or
+- `http://magneto.local` once it joins a local network.
+
+**Add to Home Screen** from Safari's share menu and it opens full screen like an app. The icon and
+the manifest are served out of flash by the board, so that works on its own Wi-Fi with no internet.
 
 ## Hardware
 
@@ -88,10 +89,10 @@ the defaults instead of bricking the board.
   switch one on - pulls the newest build from this repo's `latest` release over verified HTTPS,
   flashes and restarts; progress and failure reasons on the LED. Local upload at `/update` and
   ArduinoOTA (port 3232) also work.
-- **Responsiveness**: over the secure socket the status poll *and* every command are answered inside
-  the TLS task, instead of being relayed to the port 80 server over a loopback TCP connection. The
-  scope, FFT and pulse-fold payloads share one poller that yields to anything you just did, so a
-  button press is never queued behind a 6 kB waveform.
+- **Responsiveness**: everything is a plain fetch to the board on the same origin - no secure
+  socket, so no request is relayed through a loopback TCP connection just to reach the handler next
+  to it. The scope, FFT and pulse-fold payloads share one poller that yields to anything you just
+  did, so a button press is never queued behind a 6 kB waveform.
 
 ## Building
 
@@ -101,24 +102,14 @@ make build    # compiles ui/app.html -> webui.h, certwindow.h, then the sketch (
 make flash    # USB
 make ota      # over Wi-Fi
 make test     # host tests: engine, settings parser, update helpers, and the slider/ceiling contract
-make ui       # rebuild webui.h and docs/ after editing ui/app.html
+make ui       # rebuild webui.h after editing ui/app.html or the icon
 ```
 
-`ui/app.html` is the single UI source. `tools/embed_ui.py` gzips it into `webui.h` for the board;
-`tools/build_pages.py` wraps it into `docs/` for GitHub Pages (manifest + service worker, offline
-capable). CI compiles every push, runs the host tests, verifies `docs/` is current, and refreshes
-the `latest` release with `magneto.ota.bin` (update through the page) and `magneto.full.bin`
-(first USB flash at 0x0).
-
-GitHub Pages is served from `docs/` on `main` (Settings › Pages › Deploy from a branch).
-
-## iOS and the secure socket
-
-An installed https app may not talk plain http, so the board runs its own certificate authority:
-first boot it signs a CA (kept in LittleFS across updates) and a server certificate for
-`magneto.local` + `192.168.4.1`. On the phone, open the board's own page once, download the
-profile (Settings › Connection), install it, and switch it on under Settings › General › About ›
-Certificate Trust Settings. "Test secure link" in the app tells you which step is missing.
+`ui/app.html` is the single UI source. `tools/embed_ui.py` gzips it into `webui.h` along with the
+icon (`tools/make_icons.py`, a 32-colour PNG kept small because it lives in flash) and the web
+manifest, which the board serves at `/`, `/icon.png` and `/manifest.webmanifest`. CI compiles every
+push, runs the host tests, checks `webui.h` is current, and refreshes the `latest` release with
+`magneto.ota.bin` (update through the page) and `magneto.full.bin` (first USB flash at 0x0).
 
 ## Notes
 
