@@ -446,12 +446,14 @@ static esp_err_t wsReq(httpd_req_t* req) {
   bool post = strcmp(method, "POST") == 0;
   if ((!post && strcmp(method, "GET") != 0) || !pathUsable(path)) { free(msg); return sendError(req, id, 400, "bad request"); }
 
-  for (size_t i = 0; i < gNJson; i++) {          /* the status poll and wake are answered here, without a trip through port 80 */
+  for (size_t i = 0; i < gNJson; i++) {          /* the status poll and the commands are answered here, without a trip through port 80 */
     const TlsJson& j = gJson[i];
     if (j.post != (post ? 1 : 0) || !uriIs(path, j.uri)) continue;
-    char out[1400];
+    const char* q = strchr(path, '?');
+    q = q ? q + 1 : "";
+    char out[1700];
     int hn = snprintf(out, sizeof out, "%s 200\n", id);
-    int n = j.fn(out + hn, sizeof out - (size_t)hn);
+    int n = j.fn(q, out + hn, sizeof out - (size_t)hn);
     free(msg);
     if (n < 0) return sendError(req, id, 500, "state");
     return sendText(req, out, (size_t)(hn + n));

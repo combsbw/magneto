@@ -3,11 +3,19 @@
  *
  *   Board   : esp32:esp32:esp32s3 (arduino-esp32 core 2.0.17), USB CDC On Boot = enabled
  *   Wi-Fi   : open soft AP "Magneto" -> http://192.168.4.1 (captive portal opens the page), or after
- *             Settings > Network a home network -> http://magneto.local
+ *             Settings > Connection a local network -> http://magneto.local. Any 2.4 GHz source works,
+ *             including a phone hotspot and an open guest network. If the saved network is not there
+ *             the board hosts the access point instead - at boot, and again if the link later dies.
+ *   Recovery: holding a magnet on either hall sensor for a few seconds while the board is on a local
+ *             network reboots it into the access point, so it is never lost behind a network that
+ *             moved or changed its password (Settings > Safety has the threshold and the hold time).
  *   Secure  : wss://magneto.local/ws or wss://192.168.4.1/ws for the installed web app (GitHub Pages),
  *             once the phone trusts the board's own certificate (tlshttps.cpp, /magneto.mobileconfig).
+ *             The status poll and every command are answered inside the socket task, so a button
+ *             press does not wait for a loopback trip through the port 80 server.
  *   Update  : ArduinoOTA on 3232, HTTP upload at /update, and the one-button online update that joins
- *             Wi-Fi and pulls the newest build from the GitHub "latest" release.
+ *             the local network (or a separate update network) and pulls the newest build from the
+ *             GitHub "latest" release.
  *
  * Hardware (defaults; every pin is remappable in Settings):
  *   GPIO 7  TC4420 -> IRFB4410 low-side gate. HIGH = coil on; idles LOW with a pulldown.
@@ -49,8 +57,9 @@
 #include "ghupdate.h"
 #include "tlshttps.h"
 
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.2.0"
 #define STA_JOIN_MS 12000
+#define STA_LOST_MS 45000UL             // local network gone this long -> bring the access point up instead
 #define MDNS_POKE_MS 90000UL
 #define AP_SSID "Magneto"
 #define AP_CHANNEL 6
@@ -81,6 +90,9 @@ static const char* rstName = "";
 static volatile uint8_t updPhase = 0, updPct = 0, updErr = 0;
 static volatile uint32_t updStartAt = 0;
 static volatile uint32_t lastApiMs = 0;
+static const char* apWhy = "";           // why this boot is an access point, for the page to explain
+static uint32_t magHoldMs = 0;           // how long a steady field has been on a hall sensor
+static float magPeak = 0;                // |B| seen while that field has been held, microtesla
 
 static Preferences prefs;
 static String cfgRaw;
@@ -185,6 +197,9 @@ static void cfgLoad() {
   eng.configure(cfg.plan);
 }
 
+// Defined with the rest of the safety work, below; the status JSON reports it.
+static bool magArmed(const SenseSnap& s);
+
 // ---- web API --------------------------------------------------------------------------------------------------------
 static void sendJson(int code, const char* body) {
   server.sendHeader("Cache-Control", "no-store");
@@ -211,7 +226,8 @@ static int stateJson(char* buf, size_t cap) {
     "\"b0\":%.2f,\"b1\":%.2f,\"db\":%.3f,\"bm0\":%.2f,\"bm1\":%.2f,\"dbm\":%.3f,"
     "\"ba0\":%.2f,\"ba1\":%.2f,\"brms\":%.2f,\"ss\":%.1f,\"f\":%.2f,\"fa\":%.2f,\"snr\":%.1f,"
     "\"z0\":%d,\"z1\":%d,\"clip\":%d,\"fs\":%.0f,"
-    "\"tc\":%.1f,\"tf\":%.1f,\"dc\":%.1f,\"dfr\":%.1f,\"okc\":%d,\"okf\":%d}",
+    "\"tc\":%.1f,\"tf\":%.1f,\"dc\":%.1f,\"dfr\":%.1f,\"okc\":%d,\"okf\":%d,"
+    "\"pwmax\":%.0f,\"mga\":%d,\"mgh\":%.1f,\"hwpw\":%lu,\"hwper\":%lu}",
     FW_VERSION, mg::stateName(eng.state), t, eng.total, stageIdx, eng.nWin,
     hz, pw, mg::dutyOf(hz, pw) * 100.0, (int)eng.trip, (unsigned long)cfgRev, otaBusy ? 1 : 0,
     (unsigned long)(millis() / 1000), radioSta ? "sta" : "ap", staFailed ? 1 : 0,
@@ -220,45 +236,57 @@ static int stateJson(char* buf, size_t cap) {
     s.b0, s.b1, s.db, s.bMax0, s.bMax1, s.dbMax,
     s.bAvg0, s.bAvg1, s.bRms0, s.statSec, s.pkHz, s.pkAmp, s.pkSnr,
     s.zeroed0 ? 1 : 0, s.zeroed1 ? 1 : 0, s.clip ? 1 : 0, s.fs,
-    isnan(s.tC) ? 0.0 : s.tC, isnan(s.tF) ? 0.0 : s.tF, s.dtdtC, s.dtdtF, s.okC ? 1 : 0, s.okF ? 1 : 0);
+    isnan(s.tC) ? 0.0 : s.tC, isnan(s.tF) ? 0.0 : s.tF, s.dtdtC, s.dtdtF, s.okC ? 1 : 0, s.okF ? 1 : 0,
+    mg::pwFor(hz, mg::PW_MAX_US, cfg.maxPw), magArmed(s) ? 1 : 0, magHoldMs / 1000.f,
+    // Ground truth, read back off the pulse timer itself rather than from the plan: the on-time and
+    // period the ISR is really producing. The page checks the slider against these, so "the slider
+    // says 400 us" is backed by the hardware and not by the page agreeing with itself.
+    (unsigned long)(coilRunning() ? coilOnUs() : 0), (unsigned long)(coilRunning() ? coilPeriodUs() : 0));
   UNLOCK();
   return (n > 0 && (size_t)n < cap) ? n : -1;
 }
 
 static void sendState() {
-  char buf[1100];
+  char buf[1320];
   lastApiMs = millis();
   if (stateJson(buf, sizeof buf) < 0) { sendJson(500, "{\"ok\":false}"); return; }
   sendJson(200, buf);
 }
 
-// start/stop/pause/reset/tune and every measurement command, one endpoint
-static void handleCmd() {
+// ---- commands -------------------------------------------------------------------------------------------------------
+// One implementation behind two front doors: the port 80 handler (plain http, and anything the
+// secure socket relays) and the fast path inside the TLS task, which answers a button press without
+// a loopback trip through the web server. Plain arguments, no struct: the Arduino build inserts its
+// own prototypes at the top of this file, where a type declared further down would not exist yet.
+//
+// Returns nullptr when the command was accepted, otherwise a short error code for the page.
+static const char* runCmd(const char* cmd, float argHz, float argPw, int argCh, const char* argW) {
   lastApiMs = millis();
-  String c = server.arg("c");
   int64_t now = esp_timer_get_time();
   const char* err = nullptr;
   SenseSnap s;
   senseCopy(s);
   LOCK();
-  if (c == "start") {
+  if (!strcmp(cmd, "start")) {
     if (eng.state == mg::ST_TRIP) err = "trip";
     else if (cfg.safe.on && cfg.safe.needProbe && (!s.okC || !s.okF)) err = "probe";
     else if (!eng.start(now)) err = "state";
-  } else if (c == "pause") {
+  } else if (!strcmp(cmd, "pause")) {
     if (!eng.pause(now)) err = "state";
-  } else if (c == "stop") {
+  } else if (!strcmp(cmd, "stop")) {
     if (eng.state == mg::ST_TRIP) err = "trip";
     else eng.stop();
-  } else if (c == "resettime") {
+  } else if (!strcmp(cmd, "resettime")) {
     eng.resetTime(now);
-  } else if (c == "tune") {
-    float hz = server.arg("hz").toFloat();
-    float pw = server.arg("pw").toFloat();
+  } else if (!strcmp(cmd, "tune")) {
+    float hz = argHz;
     if (cfg.maxHz > 0 && hz > cfg.maxHz) hz = cfg.maxHz;
-    if (cfg.maxPw > 0 && pw > cfg.maxPw) pw = cfg.maxPw;
+    hz = mg::snapHz(hz);
+    // One call decides the pulse width everywhere: the ceiling first, then the period, so a tune
+    // can never ask for more than the slider is allowed to show.
+    float pw = mg::pwFor(hz, argPw, cfg.maxPw);
     if (!eng.tune(now, hz, pw)) err = "state";
-  } else if (c == "tripreset") {
+  } else if (!strcmp(cmd, "tripreset")) {
     if (eng.state != mg::ST_TRIP) err = "state";
     else if (cfg.safe.on && cfg.safe.needReset) {
       bool tempTrip = eng.trip >= mg::TR_COIL_TEMP && eng.trip <= mg::TR_FET_RATE;
@@ -269,21 +297,27 @@ static void handleCmd() {
       eng.tripReset();
       prefs.putUChar("trip", 0);
     }
-  } else if (c == "zero") {
-    senseZero(server.arg("ch").toInt());
-  } else if (c == "zeroclear") {
-    senseZeroClear(server.arg("ch").toInt());
-  } else if (c == "clear") {
-    String w = server.arg("w");
-    senseClearStats(w == "max" ? SENSE_CLR_MAX : (w == "avg" ? SENSE_CLR_AVG : SENSE_CLR_ALL));
+  } else if (!strcmp(cmd, "zero")) {
+    senseZero(argCh);
+  } else if (!strcmp(cmd, "zeroclear")) {
+    senseZeroClear(argCh);
+  } else if (!strcmp(cmd, "clear")) {
+    senseClearStats(!strcmp(argW, "max") ? SENSE_CLR_MAX : (!strcmp(argW, "avg") ? SENSE_CLR_AVG : SENSE_CLR_ALL));
   } else {
     err = "cmd";
   }
   UNLOCK();
+  return err;
+}
+
+static void handleCmd() {
+  String c = server.arg("c"), w = server.arg("w");
+  const char* err = runCmd(c.c_str(), server.arg("hz").toFloat(), server.arg("pw").toFloat(),
+                           server.arg("ch").toInt(), w.c_str());
   if (err) {
     char b[64];
     snprintf(b, sizeof b, "{\"ok\":false,\"err\":\"%s\"}", err);
-    sendJson(c == "start" || c == "tripreset" ? 409 : 400, b);
+    sendJson(!strcmp(err, "trip") || !strcmp(err, "probe") || !strcmp(err, "cool") || !strcmp(err, "state") ? 409 : 400, b);
     return;
   }
   sendState();
@@ -484,18 +518,45 @@ static String jsonEsc(const String& s) {
   return o;
 }
 
+// The network the online update should join: the separate update network when one is configured and
+// switched on, otherwise the local Wi-Fi the board already knows. One place decides, so the page and
+// the update itself can never disagree about which credentials are in play.
+static bool updUsesAlt() {
+  return prefs.getUChar("wUAlt", 0) != 0 && prefs.getString("wUSsid", "").length() > 0;
+}
+static String updSsid() { return updUsesAlt() ? prefs.getString("wUSsid", "") : prefs.getString("wSsid", ""); }
+static String updPass() { return updUsesAlt() ? prefs.getString("wUPass", "") : prefs.getString("wPass", ""); }
+
 static void handleUpdInfo() {
-  String ssid = prefs.getString("wSsid", ""), repo = prefs.getString("wRepo", GH_REPO_DEFAULT);
-  bool hasPass = prefs.getString("wPass", "").length() > 0, hasTok = prefs.getString("wTok", "").length() > 0;
-  String r = String("{\"ssid\":\"") + jsonEsc(ssid) + "\",\"hasPass\":" + (hasPass ? "true" : "false") + ",\"repo\":\"" + jsonEsc(repo) +
+  String repo = prefs.getString("wRepo", GH_REPO_DEFAULT);
+  String loc = prefs.getString("wSsid", ""), alt = prefs.getString("wUSsid", "");
+  bool hasTok = prefs.getString("wTok", "").length() > 0;
+  String r = String("{\"ssid\":\"") + jsonEsc(updSsid()) + "\",\"hasPass\":" + (updPass().length() ? "true" : "false") +
+             ",\"local\":\"" + jsonEsc(loc) + "\",\"localHasPass\":" + (prefs.getString("wPass", "").length() ? "true" : "false") +
+             ",\"useAlt\":" + (prefs.getUChar("wUAlt", 0) ? "true" : "false") +
+             ",\"altSsid\":\"" + jsonEsc(alt) + "\",\"altHasPass\":" + (prefs.getString("wUPass", "").length() ? "true" : "false") +
+             ",\"repo\":\"" + jsonEsc(repo) +
              "\",\"hasToken\":" + (hasTok ? "true" : "false") + ",\"last\":\"" + jsonEsc(prefs.getString("wRes", "")) +
              "\",\"from\":\"" + jsonEsc(prefs.getString("wFrom", "")) + "\",\"ver\":\"" FW_VERSION "\"}";
   sendJson(200, r.c_str());
 }
 
+// Fields (any subset): useAlt = 0/1 ("use a separate update network"), altSsid, altPass, repo, token.
+// The local Wi-Fi itself is only ever set through /api/net, so the two forms cannot overwrite each
+// other the way they used to.
 static void handleUpdSave() {
-  if (server.hasArg("ssid")) { String v = server.arg("ssid"); if (v.length() > 32) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; } prefs.putString("wSsid", v); }
-  if (server.hasArg("pass")) { String v = server.arg("pass"); if (v.length() > 63) { sendJson(400, "{\"ok\":false,\"err\":\"pass\"}"); return; } prefs.putString("wPass", v); }
+  if (server.hasArg("useAlt")) prefs.putUChar("wUAlt", server.arg("useAlt").toInt() ? 1 : 0);
+  if (server.hasArg("altSsid")) {
+    String v = server.arg("altSsid");
+    v.trim();
+    if (v.length() > 32) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
+    prefs.putString("wUSsid", v);
+  }
+  if (server.hasArg("altPass")) {
+    String v = server.arg("altPass");
+    if (v.length() > 63) { sendJson(400, "{\"ok\":false,\"err\":\"pass\"}"); return; }
+    prefs.putString("wUPass", v);
+  }
   if (server.hasArg("repo")) {
     String v = server.arg("repo");
     if (v.length() == 0) v = GH_REPO_DEFAULT;
@@ -511,7 +572,7 @@ static void handleUpdSave() {
 }
 
 static void handleUpdStart() {
-  if (prefs.getString("wSsid", "").length() == 0) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
+  if (updSsid().length() == 0) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
   LOCK();
   bool running = eng.running();
   UNLOCK();
@@ -559,7 +620,7 @@ static void runWebUpdate() {
   if (cfgDirty) cfgSaveNow();
   coilOff();
   senseHold(true);
-  String ssid = prefs.getString("wSsid", ""), pass = prefs.getString("wPass", "");
+  String ssid = updSsid(), pass = updPass();
   String repo = prefs.getString("wRepo", GH_REPO_DEFAULT), tok = prefs.getString("wTok", "");
   prefs.putString("wFrom", FW_VERSION);
   prefs.putString("wRes", "");
@@ -573,6 +634,9 @@ static void runWebUpdate() {
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  WiFi.setMinSecurity(WIFI_AUTH_OPEN);          // an open guest network or a hotspot on WPA is still a network
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.begin(ssid.c_str(), pass.c_str());
 
   bool ok = true;
@@ -707,6 +771,8 @@ static void handleNetInfo() {
              "\",\"fail\":" + (staFailed ? "true" : "false") + ",\"ssid\":\"" + jsonEsc(ssid) +
              "\",\"hasPass\":" + (hasPass ? "true" : "false") + ",\"ip\":\"" + ip +
              "\",\"host\":\"" HOST_NAME "\",\"tx\":" + String((int)txLevel) +
+             ",\"why\":\"" + apWhy + "\",\"updAlt\":" + (prefs.getUChar("wUAlt", 0) ? "true" : "false") +
+             ",\"updSsid\":\"" + jsonEsc(updSsid()) + "\",\"ap\":\"" AP_SSID "\"" +
              ",\"bo\":" + String((unsigned long)boCount) + ",\"rst\":\"" + rstName + "\"}";
   sendJson(200, r.c_str());
 }
@@ -728,16 +794,23 @@ static void handlePower() {
   handleNetInfo();
 }
 
+// mode = sta | ap, plus optional ssid / pass. The radio only has to restart when the mode actually
+// changes, so saving a corrected password while the device sits on its access point - or mid
+// treatment - costs nothing. reboot=1 forces it (the page's "Save and reboot").
 static void handleNetPost() {
   if (!server.hasArg("mode")) { sendJson(400, "{\"ok\":false,\"err\":\"mode\"}"); return; }
   String mode = server.arg("mode");
   if (mode != "sta" && mode != "ap") { sendJson(400, "{\"ok\":false,\"err\":\"mode\"}"); return; }
+  String was = prefs.getString("wMode", "ap");
+  if (was != "sta") was = "ap";
+  bool restart = mode != was || server.arg("reboot") == "1";
   LOCK();
   bool running = eng.running();
   UNLOCK();
-  if (running || otaBusy || updPhase) { sendJson(409, "{\"ok\":false,\"err\":\"busy\"}"); return; }
+  if (restart && (running || otaBusy || updPhase)) { sendJson(409, "{\"ok\":false,\"err\":\"busy\"}"); return; }
   if (server.hasArg("ssid")) {
     String v = server.arg("ssid");
+    v.trim();                              // a trailing space from a phone keyboard is a silent join failure
     if (v.length() > 32) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
     prefs.putString("wSsid", v);
   }
@@ -748,7 +821,8 @@ static void handleNetPost() {
   }
   if (mode == "sta" && prefs.getString("wSsid", "").length() == 0) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
   prefs.putString("wMode", mode);
-  sendJson(200, "{\"ok\":true}");
+  sendJson(200, restart ? "{\"ok\":true,\"reboot\":true}" : "{\"ok\":true,\"reboot\":false}");
+  if (!restart) return;
   rebootAtMs = millis() + 600;
   if (!rebootAtMs) rebootAtMs = 1;
 }
@@ -767,8 +841,11 @@ static bool startStation() {
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOST_NAME);
   WiFi.setAutoReconnect(true);
-  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
-  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);          // look at every access point with this name ...
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);      // ... and join the strongest one
+  // The core refuses anything weaker than WPA2 by default, which rules out open guest networks and
+  // the handful of hotspots that still offer WPA only. A local network is a local network.
+  WiFi.setMinSecurity(WIFI_AUTH_OPEN);
   applyTx();
   for (int attempt = 0; attempt < 2 && WiFi.status() != WL_CONNECTED; attempt++) {
     if (attempt) { WiFi.disconnect(false, false); delay(300); }
@@ -778,26 +855,48 @@ static bool startStation() {
   }
   joinPhase = 0;
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("home Wi-Fi join failed for \"%s\"\n", ssid.c_str());
+    Serial.printf("local Wi-Fi join failed for \"%s\"\n", ssid.c_str());
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(100);
     return false;
   }
   esp_wifi_set_ps(WIFI_PS_NONE);
-  Serial.printf("home Wi-Fi \"%s\"  %d dBm  http://%s  http://%s.local\n", ssid.c_str(), (int)WiFi.RSSI(), WiFi.localIP().toString().c_str(), HOST_NAME);
+  Serial.printf("local Wi-Fi \"%s\"  %d dBm  http://%s  http://%s.local\n", ssid.c_str(), (int)WiFi.RSSI(), WiFi.localIP().toString().c_str(), HOST_NAME);
   return true;
 }
 
+static void startAp();
+
+// Leave the local network and host the access point from here on, without rebooting - a treatment
+// may be running and must not be interrupted. The page comes back at http://192.168.4.1.
+static void toAp(const char* why) {
+  Serial.printf("local Wi-Fi lost (%s): starting the access point\n", why);
+  tlsStop();
+  MDNS.end();
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
+  radioSta = false;
+  staFailed = true;
+  apWhy = why;
+  startAp();
+  gotIpFlag = false;
+}
+
+// On a local network: ask the driver to reconnect when the link drops, and if the network simply is
+// not there any more - moved, renamed, router off, hotspot put away - stop waiting and host the
+// access point, so the board is reachable again without anyone having to find a USB cable.
 static void staWatch() {
   if (!radioSta || otaBusy || updPhase) return;
-  static uint32_t lastChk = 0, downSince = 0;
+  static uint32_t lastChk = 0, downSince = 0, lastTry = 0;
   uint32_t now = millis();
   if ((uint32_t)(now - lastChk) < 2000) return;
   lastChk = now;
   if (WiFi.status() == WL_CONNECTED) { downSince = 0; return; }
-  if (!downSince) downSince = now ? now : 1;
-  else if ((uint32_t)(now - downSince) > 8000) { WiFi.reconnect(); downSince = now; }
+  if (!downSince) { downSince = now ? now : 1; lastTry = now; return; }
+  if ((uint32_t)(now - downSince) > STA_LOST_MS) { downSince = 0; toAp("gone"); return; }
+  if ((uint32_t)(now - lastTry) > 8000) { WiFi.reconnect(); lastTry = now; }
 }
 
 static void mdnsPoke() {
@@ -830,6 +929,44 @@ static void tripTo(mg::TripCode code) {
   Serial.printf("TRIP %d: coil off\n", (int)code);
 }
 
+// Is the magnet escape hatch available right now? Only on a local network (on its own access point
+// there is nothing to recover from), and only on a sensor with a stored zero: an un-zeroed 49E can
+// sit a few hundred gauss off on its quiescent output alone, which would look exactly like a magnet.
+// The zero lives in NVS, so this is a one-time step and the page says when it is missing.
+static bool magArmed(const SenseSnap& s) {
+  return radioSta && cfg.safe.magAp && (s.zeroed0 || s.zeroed1);
+}
+
+// Magnet escape hatch. A steady field held on a zeroed hall sensor past the configured threshold and
+// hold time, while the board is on a local network, saves "access point" as the wanted mode and
+// restarts. The field has to stay above the threshold the whole time: a pulse train from the coil
+// itself drops back towards zero between pulses, so running a treatment does not trip it, and the
+// coil is parked before the restart either way.
+static void magWatch(const SenseSnap& s, uint32_t ms) {
+  static uint32_t lastMs = 0;
+  uint32_t dt = lastMs ? ms - lastMs : 0;
+  lastMs = ms;
+  if (!magArmed(s) || otaBusy || updPhase || rebootAtMs) { magHoldMs = 0; magPeak = 0; return; }
+  float b = 0;                                    // only channels with a stored zero are believed
+  if (s.zeroed0 && fabsf(s.b0) > b) b = fabsf(s.b0);
+  if (s.zeroed1 && fabsf(s.b1) > b) b = fabsf(s.b1);
+  if (b < cfg.safe.magUt) { magHoldMs = 0; magPeak = 0; return; }
+  if (b > magPeak) magPeak = b;
+  if (dt > 1000) dt = 1000;                       // a long gap (a stalled loop) must not count as held time
+  magHoldMs += dt;
+  if (magHoldMs < (uint32_t)(cfg.safe.magSec * 1000.f)) return;
+  Serial.printf("magnet held %.0f uT for %.1f s: rebooting into the access point\n", magPeak, cfg.safe.magSec);
+  coilOff();
+  LOCK();
+  if (eng.state == mg::ST_RUN) eng.pause(esp_timer_get_time());
+  UNLOCK();
+  prefs.putString("wMode", "ap");
+  prefs.putUChar("magBoot", 1);
+  if (cfgDirty) cfgSaveNow();
+  delay(150);
+  ESP.restart();
+}
+
 static void safetyAndDrive() {
   static uint32_t safeAt = 0;
   int64_t now = esp_timer_get_time();
@@ -847,8 +984,11 @@ static void safetyAndDrive() {
     on = false;
   }
   UNLOCK();
+  // The last word on what the coil is driven with: the frequency ceiling, then the pulse-width
+  // ceiling, then the period. Whatever the plan or a stale tune asked for, this is what happens, and
+  // it is the same mg::pwFor() the page uses to lay out the slider.
   if (cfg.maxHz > 0 && hz > cfg.maxHz) hz = cfg.maxHz;
-  if (cfg.maxPw > 0 && pw > cfg.maxPw) pw = cfg.maxPw;
+  if (on) pw = mg::pwFor(hz, pw, cfg.maxPw);
   if (on != drvOn || (on && (hz != drvHz || pw != drvPw))) {
     if (on) coilSet(hz, pw);
     else coilOff();
@@ -868,6 +1008,7 @@ static void safetyAndDrive() {
   if ((uint32_t)(ms - safeAt) < 250) return;
   safeAt = ms;
   senseCopy(snapCache);
+  magWatch(snapCache, ms);
   if (!cfg.safe.on) return;
   LOCK();
   bool running = eng.state == mg::ST_RUN;
@@ -899,12 +1040,30 @@ static const char* resetName(esp_reset_reason_t r) {
 
 static void onGotIp(arduino_event_id_t) { gotIpFlag = true; }
 
-// Port 443 carries only wss://<board>/ws. The state poll - by far the most frequent call - is
-// answered inside the TLS task; everything else is repeated to the handlers on port 80.
-static int jsonState(char* buf, size_t cap) { lastApiMs = millis(); return stateJson(buf, cap); }
-static const TlsJson TLS_JSON[] = {{"/api/state", 0, jsonState}};
+// Port 443 carries only wss://<board>/ws. The state poll and the commands - the calls that decide
+// how quickly the page feels - are answered inside the TLS task. Everything else is repeated to the
+// handlers on port 80, which costs a loopback TCP connection and a few passes of loop().
+static int jsonState(const char*, char* buf, size_t cap) { lastApiMs = millis(); return stateJson(buf, cap); }
+
+static int jsonCmd(const char* qs, char* buf, size_t cap) {
+  char c[20], hz[16], pw[16], ch[8], w[8];
+  mg::qsParam(qs, "c", c, sizeof c);
+  mg::qsParam(qs, "hz", hz, sizeof hz);
+  mg::qsParam(qs, "pw", pw, sizeof pw);
+  mg::qsParam(qs, "ch", ch, sizeof ch);
+  mg::qsParam(qs, "w", w, sizeof w);
+  const char* err = runCmd(c, (float)atof(hz), (float)atof(pw), atoi(ch), w);
+  if (err) {                        /* the page reads the error out of the body, so 200 with ok:false */
+    int n = snprintf(buf, cap, "{\"ok\":false,\"err\":\"%s\"}", err);
+    return (n > 0 && (size_t)n < cap) ? n : -1;
+  }
+  return stateJson(buf, cap);
+}
+
+static const TlsJson TLS_JSON[] = {{"/api/state", 0, jsonState}, {"/api/cmd", 1, jsonCmd}};
 
 void setup() {
+  setCpuFrequencyMhz(240);              // the DMA ADC, the FFT and the 1 us pulse ISR all want the full clock
   Serial.begin(115200);
   delay(150);
   engMtx = xSemaphoreCreateMutex();
@@ -933,10 +1092,15 @@ void setup() {
 
   WiFi.persistent(false);
   WiFi.onEvent(onGotIp, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  if (prefs.getUChar("magBoot", 0)) {    // the magnet put it here; the page says so and offers the way back
+    prefs.putUChar("magBoot", 0);
+    apWhy = "magnet";
+  }
   String wanted = prefs.getString("wMode", "ap");
   if (wanted == "sta") {
     radioSta = startStation();
     staFailed = !radioSta;
+    if (staFailed && !apWhy[0]) apWhy = "join";
   }
   if (!radioSta) startAp();
   else if (MDNS.begin(HOST_NAME)) MDNS.addService("http", "tcp", 80);

@@ -10,6 +10,30 @@
 
 namespace mg {
 
+// ---- query strings ----------------------------------------------------------------------------
+// "c=tune&hz=12.5&pw=100" -> one value, copied into out (always NUL terminated). The secure socket
+// hands the page's commands straight to the firmware instead of relaying them through the port 80
+// server, and this is how it reads their arguments. Returns false when the key is not present.
+inline bool qsParam(const char* qs, const char* key, char* out, size_t cap) {
+  if (cap) out[0] = 0;
+  if (!qs || !cap) return false;
+  size_t kn = strlen(key);
+  for (const char* p = qs; *p;) {
+    const char* amp = strchr(p, '&');
+    size_t len = amp ? (size_t)(amp - p) : strlen(p);
+    if (len > kn && p[kn] == '=' && strncmp(p, key, kn) == 0) {
+      size_t vn = len - kn - 1;
+      if (vn > cap - 1) vn = cap - 1;
+      memcpy(out, p + kn + 1, vn);
+      out[vn] = 0;
+      return true;
+    }
+    if (!amp) break;
+    p = amp + 1;
+  }
+  return false;
+}
+
 // type: 'n' number, 'b' boolean (num = 0 or 1), 's' string (str)
 typedef void (*JsonLeaf)(void* ctx, const char* path, char type, double num, const char* str);
 

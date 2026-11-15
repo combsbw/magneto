@@ -52,6 +52,31 @@ inline float dutyOf(float hz, float pwUs) {
   return clampf(d, 0.f, 1.f);
 }
 
+// The widest pulse this frequency can carry: one microsecond short of the period, so the gate
+// always returns low every cycle. 0 when the coil is parked (hz 0). Nothing downstream may exceed
+// this - a pulse as long as the period would hold the MOSFET on continuously (DC through the coil),
+// which is not a pulse and not what the slider says it is.
+inline float pwCapUs(float hz) {
+  uint32_t per = periodUs(hz);
+  if (!per) return 0.f;
+  float cap = (float)per - 1.f;
+  if (cap < PW_MIN_US) cap = PW_MIN_US;
+  if (cap > PW_MAX_US) cap = PW_MAX_US;
+  return cap;
+}
+
+// The pulse width actually driven for this pair: snapped, held under an optional ceiling, and
+// never longer than the period allows. This is the single place that decides it, so the firmware,
+// the host tests and the page all agree on what a slider position means.
+inline float pwFor(float hz, float pwUs, float ceilUs) {
+  float pw = snapPw(pwUs);
+  if (ceilUs > 0.f && pw > ceilUs) pw = snapPw(ceilUs);
+  float cap = pwCapUs(hz);
+  if (cap <= 0.f) return 0.f;
+  if (pw > cap) pw = cap;
+  return pw;
+}
+
 struct Stage {
   bool on;        // stage participates in the plan
   float hz;
@@ -237,7 +262,7 @@ struct Engine {
     if (wi < 0) return false;
     tuneWin = wi;
     tuneHz = snapHz(hz);
-    tunePw = snapPw(pwUs);
+    tunePw = pwFor(tuneHz, pwUs, 0.f);      // ceiling already applied by the caller
     return true;
   }
 };

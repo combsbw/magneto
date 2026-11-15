@@ -92,10 +92,12 @@ monitor:
 	@test -n "$(PORT)" || { echo "No port found. Run 'make ports'."; exit 1; }
 	$(CLI) monitor --port $(PORT) --config baudrate=115200
 
-# Host tests: the treatment engine and the settings parser, built with the PC's compiler.
+# Host tests: the treatment engine and the settings parser with the PC's compiler, then the page's
+# own slider arithmetic (node) against the same limits - the ceiling and the no-DC guarantee.
 test:
 	g++ -std=c++11 -Wall -Wextra -O1 -I. test/host_test.cpp -o test/host_test
 	test/host_test state
+	@if command -v node >/dev/null; then node test/slider_test.js; else echo "node not found: skipped test/slider_test.js"; fi
 
 clean:
 	rm -rf $(BUILD) test/host_test
