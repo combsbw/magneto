@@ -678,6 +678,10 @@ details.fold>div{padding-bottom:11px}
   <div class="card">
     <h2>Pins</h2>
     <div class="pingrid" id="pinGrid"></div>
+    <div class="note small">D numbers are the Seeed XIAO ESP32S3 silkscreen; GPIO is what the firmware uses.
+      The defaults fill that board's header exactly: D8 (GPIO 7) drives the coil, D0-D3 take the two hall sensors
+      and two thermistors, D4/D5/D9 the status RGB and D10 the coil LED. D6 and D7 are the USB-serial pins and are
+      not offered. GPIOs with no D number are not on the XIAO header, though other ESP32-S3 boards break them out.</div>
     <div class="note bad pinwarn" id="pinWarn">A pin is used twice, or a sensor is on a pin without ADC.
       The board keeps its previous wiring until this is fixed.</div>
     <div class="row mt8"><div class="lbl">Coil LED is active-low</div>
@@ -2383,12 +2387,23 @@ const PIN_DEFS=[['drive','Coil drive',false],['hallC','Hall center',true],['hall
   ['thC','Thermistor coil',true],['thF','Thermistor MOSFET',true],['r','RGB red',false],['g','RGB green',false],
   ['b','RGB blue',false],['coil','Coil LED',false]];
 const PIN_ALL=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21],PIN_ADC=[1,2,3,4,5,6,7,8,9,10];
+/* Seeed XIAO ESP32S3 silkscreen -> GPIO, from the arduino-esp32 XIAO_ESP32S3 variant. The board
+   prints D numbers, the firmware speaks GPIO, and the two do not line up - so both are shown.
+   D6/D7 are GPIO 43/44, the USB-serial pair, and are deliberately not offered. GPIO 21 is the
+   on-board user LED. Every default pin in this build lands on D0-D5 or D8-D10, which is that
+   board's whole usable header. Other S3 boards may break out the GPIOs with no D number. */
+const XIAO_D={1:'D0',2:'D1',3:'D2',4:'D3',5:'D4',6:'D5',7:'D8',8:'D9',9:'D10'};
+function pinNote(p){return p===3?'strap':p===21?'user LED':'';}
+function pinLabel(p){
+  const d=XIAO_D[p],n=pinNote(p);
+  return (d?d+' (GPIO '+p+')':'GPIO '+p)+(n?' · '+n:'');
+}
 function fillPins(){
   const host=$('#pinGrid');
   if(!host.childElementCount){
     host.innerHTML=PIN_DEFS.map(d=>'<div><label>'+d[1]+(d[2]?' (ADC)':'')+'</label>'+
       '<select class="txt" data-pin="'+d[0]+'">'+
-      (d[2]?PIN_ADC:PIN_ALL).map(p=>'<option value="'+p+'">GPIO '+p+(p===3?' (strap)':'')+'</option>').join('')+
+      (d[2]?PIN_ADC:PIN_ALL).map(p=>'<option value="'+p+'">'+pinLabel(p)+'</option>').join('')+
       '</select></div>').join('');
     host.addEventListener('change',e=>{
       const k=e.target.dataset.pin;if(!k)return;
