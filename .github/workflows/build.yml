@@ -26,12 +26,14 @@ jobs:
       - name: Install ESP32 core 2.0.17
         run: make deps
 
-      - name: Rebuild the embedded page, icon and manifest
+      # Only webui.h is regenerated here. embed_ui.py is pure stdlib and its gzip is pinned byte for
+      # byte, so this is a real "is the committed page current?" check. The icon is not redrawn:
+      # make_icons.py needs Pillow, whose PNG encoder is free to change between versions, and
+      # diffing a freshly encoded icon against the committed one would fail on that alone.
+      - name: Check the embedded page is current
         run: |
-          pip install --quiet pillow
-          python3 tools/make_icons.py
           python3 tools/embed_ui.py
-          git diff --exit-code -- webui.h icons
+          git diff --exit-code -- webui.h
 
       - name: Compile (esp32:esp32:XIAO_ESP32S3)
         run: make build
