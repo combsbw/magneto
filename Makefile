@@ -6,7 +6,7 @@
 #   make flash      compile and upload over USB
 #   make ota        upload over Wi-Fi with ArduinoOTA (join the "Magneto" network first)
 #
-# Extras: make test (host tests of the engine), make ui (rebuild webui.h), make monitor, make ota-http, make clean
+# Extras: make test (host tests), make ui (rebuild webui.h from the page and icon), make monitor, make ota-http, make clean
 #
 # Override on the command line, e.g.  make flash PORT=/dev/cu.usbmodem1101
 
@@ -38,7 +38,7 @@ ARDUINO15  := $(if $(DATA_DIR),$(DATA_DIR),$(HOME)/.arduino15)
 ESPOTA     ?= $(firstword $(wildcard $(ARDUINO15)/packages/esp32/hardware/esp32/$(CORE_VER)/tools/espota.py))
 
 .DEFAULT_GOAL := help
-.PHONY: help ports deps ui pages build flash ota ota-http monitor test clean
+.PHONY: help ports deps ui build flash ota ota-http monitor test clean
 
 help:
 	@echo "make ports   list serial ports"
@@ -46,7 +46,7 @@ help:
 	@echo "make build   compile ($(FQBN))"
 	@echo "make flash   build and upload over USB (PORT=$(PORT))"
 	@echo "make ota     upload over Wi-Fi to $(OTA_HOST):$(OTA_PORT)  (Magneto, or the home network if the device joined it)"
-	@echo "also: test, ui, pages, monitor, ota-http, clean"
+	@echo "also: test, ui, monitor, ota-http, clean"
 
 ports:
 	$(CLI) board list
@@ -57,23 +57,16 @@ deps:
 	@echo "Core $(CORE_VER) installed. OTA libraries (ArduinoOTA, Update, WebServer, DNSServer, ESPmDNS, Preferences) are part of it."
 	@command -v python3 >/dev/null || echo "Note: 'make ota' and 'make ui' need python3."
 
-# The web page is compiled into the sketch as a gzipped array.
-webui.h: ui/app.html tools/embed_ui.py
+# The page, the icon and the manifest are compiled into the sketch; the board is the only host.
+webui.h: ui/app.html icons/icon-192.png tools/embed_ui.py
 	python3 tools/embed_ui.py
 
-# GitHub Pages site (docs/ on main). Relative paths, so it works at /<repo>/.
-docs/index.html: ui/app.html icons/apple-touch-icon.png icons/icon-192.png tools/build_pages.py
-	python3 tools/build_pages.py
+icons/icon-192.png: tools/make_icons.py
+	python3 tools/make_icons.py
 
-pages: docs/index.html
+ui: webui.h
 
-ui: webui.h pages
-
-# Server-certificate dates. Regenerated every build; the authority on the board stays put.
-certwindow.h: tools/cert_window.py
-	python3 tools/cert_window.py
-
-build: webui.h certwindow.h
+build: webui.h
 	$(CLI) compile --fqbn $(FQBN) --output-dir $(BUILD) .
 
 flash: build
