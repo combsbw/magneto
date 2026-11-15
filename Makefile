@@ -38,7 +38,7 @@ ARDUINO15  := $(if $(DATA_DIR),$(DATA_DIR),$(HOME)/.arduino15)
 ESPOTA     ?= $(firstword $(wildcard $(ARDUINO15)/packages/esp32/hardware/esp32/$(CORE_VER)/tools/espota.py))
 
 .DEFAULT_GOAL := help
-.PHONY: help ports deps ui build flash ota ota-http monitor test clean
+.PHONY: help ports deps ui icons build flash ota ota-http monitor test clean
 
 help:
 	@echo "make ports   list serial ports"
@@ -46,7 +46,7 @@ help:
 	@echo "make build   compile ($(FQBN))"
 	@echo "make flash   build and upload over USB (PORT=$(PORT))"
 	@echo "make ota     upload over Wi-Fi to $(OTA_HOST):$(OTA_PORT)  (Magneto, or the home network if the device joined it)"
-	@echo "also: test, ui, monitor, ota-http, clean"
+	@echo "also: test, ui, icons, monitor, ota-http, clean"
 
 ports:
 	$(CLI) board list
@@ -58,13 +58,19 @@ deps:
 	@command -v python3 >/dev/null || echo "Note: 'make ota' and 'make ui' need python3."
 
 # The page, the icon and the manifest are compiled into the sketch; the board is the only host.
+# webui.h depends on the icon's bytes, so changing the file rebuilds it - but there is deliberately
+# no rule to redraw the icon. That needs Pillow, the art changes about never, and the PNG is
+# committed; making it a build dependency only means a clean checkout cannot build without Pillow
+# installed. Redraw it on purpose with "make icons" after editing tools/make_icons.py.
 webui.h: ui/app.html icons/icon-192.png tools/embed_ui.py
 	python3 tools/embed_ui.py
 
-icons/icon-192.png: tools/make_icons.py
-	python3 tools/make_icons.py
-
 ui: webui.h
+
+# Redraw the icon art (needs Pillow). Commit the PNG, then "make ui" to re-embed it.
+icons:
+	python3 tools/make_icons.py
+	$(MAKE) webui.h
 
 build: webui.h
 	$(CLI) compile --fqbn $(FQBN) --output-dir $(BUILD) .

@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 // page: 150852 bytes of HTML, 46783 gzipped. icon: 2569 bytes. manifest: 176 gzipped.
-static const char WEBUI_CACHE_ID[] = "magneto-869050f44f5d";
 static const size_t WEBUI_GZ_LEN = 46783;
 static const uint8_t WEBUI_GZ[] PROGMEM = {
   0x1f,0x8b,0x08,0x00,0x00,0x00,0x00,0x00,0x02,0xff,0xec,0xbd,0x5d,0x73,0xdb,0x4a,

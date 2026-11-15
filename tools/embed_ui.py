@@ -8,7 +8,6 @@ and one <script>, with no <html>/<head>/<body>. The soft AP has no internet, so 
 dropped (the CSS already falls back to system fonts) and the page is wrapped in a real document
 with the icon and manifest links in its head.
 """
-import hashlib
 import os
 import re
 import struct
@@ -69,7 +68,6 @@ manifest = (
 icon = open(os.path.join(root, "icons", "icon-192.png"), "rb").read()
 
 raw = page.encode("utf-8")
-cache = "magneto-" + hashlib.sha256(raw).hexdigest()[:12]
 gz_page = gz(raw)
 
 def c_array(name, data):
@@ -87,7 +85,6 @@ with open(dst, "w") as f:
     f.write("#pragma once\n#include <stddef.h>\n#include <stdint.h>\n\n")
     f.write("// page: %d bytes of HTML, %d gzipped. icon: %d bytes. manifest: %d gzipped.\n"
             % (len(raw), len(gz_page), len(icon), len(mgz)))
-    f.write("static const char WEBUI_CACHE_ID[] = \"%s\";\n" % cache)
     f.write(c_array("WEBUI_GZ", gz_page))
     f.write("\n// 192x192 PNG, already compressed; served as-is at /icon.png\n")
     f.write(c_array("WEBUI_ICON", icon))
