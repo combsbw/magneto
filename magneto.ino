@@ -54,6 +54,7 @@
 #include "sense.h"
 #include "leds.h"
 #include "webui.h"
+#include "netprobe.h"
 #include "ghupdate.h"
 #include "tlshttps.h"
 
@@ -91,6 +92,7 @@ static volatile uint8_t updPhase = 0, updPct = 0, updErr = 0;
 static volatile uint32_t updStartAt = 0;
 static volatile uint32_t lastApiMs = 0;
 static const char* apWhy = "";           // why this boot is an access point, for the page to explain
+static bool apPortal = false;            // true = answer every probe with the page (captive pop-up)
 static uint32_t magHoldMs = 0;           // how long a steady field has been on a hall sensor
 static float magPeak = 0;                // |B| seen while that field has been held, microtesla
 
@@ -771,7 +773,8 @@ static void handleNetInfo() {
              "\",\"fail\":" + (staFailed ? "true" : "false") + ",\"ssid\":\"" + jsonEsc(ssid) +
              "\",\"hasPass\":" + (hasPass ? "true" : "false") + ",\"ip\":\"" + ip +
              "\",\"host\":\"" HOST_NAME "\",\"tx\":" + String((int)txLevel) +
-             ",\"why\":\"" + apWhy + "\",\"updAlt\":" + (prefs.getUChar("wUAlt", 0) ? "true" : "false") +
+             ",\"why\":\"" + apWhy + "\",\"portal\":" + (apPortal ? "true" : "false") +
+             ",\"updAlt\":" + (prefs.getUChar("wUAlt", 0) ? "true" : "false") +
              ",\"updSsid\":\"" + jsonEsc(updSsid()) + "\",\"ap\":\"" AP_SSID "\"" +
              ",\"bo\":" + String((unsigned long)boCount) + ",\"rst\":\"" + rstName + "\"}";
   sendJson(200, r.c_str());
@@ -819,6 +822,10 @@ static void handleNetPost() {
     if (v.length() > 63) { sendJson(400, "{\"ok\":false,\"err\":\"pass\"}"); return; }
     prefs.putString("wPass", v);
   }
+  if (server.hasArg("portal")) {                 // takes effect at once; no reboot needed
+    apPortal = server.arg("portal").toInt() != 0;
+    prefs.putUChar("wPortal", apPortal ? 1 : 0);
+  }
   if (mode == "sta" && prefs.getString("wSsid", "").length() == 0) { sendJson(400, "{\"ok\":false,\"err\":\"ssid\"}"); return; }
   prefs.putString("wMode", mode);
   sendJson(200, restart ? "{\"ok\":true,\"reboot\":true}" : "{\"ok\":true,\"reboot\":false}");
@@ -827,8 +834,30 @@ static void handleNetPost() {
   if (!rebootAtMs) rebootAtMs = 1;
 }
 
+// Phones probe a network for internet the moment they join it, over plain http, at a name our
+// wildcard DNS points straight back at us. Answering those probes with a redirect to the page is
+// what tells the phone "captive portal, no internet" - and iOS then treats the network as unusable:
+// it shows "No Internet Connection" and, on a phone with a cellular connection to fall back to,
+// quietly leaves within seconds. An iPad with no cellular has nowhere to go, so it hangs on longer.
+// Answering the probe the way a working network would keeps the phone on the access point, which is
+// what matters here: the page is reached by address and the installed app by the secure socket,
+// neither of which needs the portal pop-up.
+//
+// apProbe = 1 restores the old behaviour for anyone who wants the pop-up instead.
 static void handleNotFound() {
   if (radioSta) { server.send(404, "text/plain", "not found"); return; }
+  if (!apPortal) {
+    String uri = server.uri(), host = server.hostHeader();
+    uri.toLowerCase();
+    host.toLowerCase();
+    mg::ProbeKind k = mg::probeKind(uri.c_str(), host.c_str());
+    if (k != mg::PROBE_NONE) {
+      server.sendHeader("Cache-Control", "no-store");
+      server.send(mg::probeCode(k), mg::probeType(k), mg::probeBody(k));
+      return;
+    }
+  }
+  // anything else typed into a browser still lands on the page
   server.sendHeader("Location", "http://192.168.4.1/");
   server.send(302, "text/plain", "");
 }
@@ -1071,6 +1100,7 @@ void setup() {
   prefs.begin("magneto", false);
   txLevel = prefs.getUChar("wTx", 1);
   if (txLevel > 2) txLevel = 1;
+  apPortal = prefs.getUChar("wPortal", 0) != 0;
   esp_reset_reason_t rr = esp_reset_reason();
   rstName = resetName(rr);
   boCount = prefs.getUInt("bo", 0);

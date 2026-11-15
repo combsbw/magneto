@@ -8,6 +8,7 @@
 #include "../json.h"
 #include "../config.h"
 #include "../ghupdate.h"
+#include "../netprobe.h"
 
 static int failures = 0;
 
@@ -263,8 +264,43 @@ static void testQs() {
   CHECK(mg::qsParam("hz=123456789", "hz", small, sizeof small) && !strcmp(small, "123"));
 }
 
+// The soft AP answers every name, so a phone's internet check lands here. Replying with the page
+// is what makes iOS call the network a captive portal and leave it for cellular within seconds, so
+// each probe has to get the exact reply its OS expects - and everything else must still reach the
+// page.
+static void testProbe() {
+  using namespace mg;
+  // answered as a working network
+  CHECK(probeKind("/hotspot-detect.html", "captive.apple.com") == PROBE_APPLE);
+  CHECK(probeKind("/library/test/success.html", "www.apple.com") == PROBE_APPLE);
+  CHECK(probeKind("/hotspot-detect.html", "192.168.4.1") == PROBE_APPLE);      // path alone is enough
+  CHECK(probeKind("/", "captive.apple.com") == PROBE_APPLE);                   // host alone is enough
+  CHECK(probeKind("/generate_204", "connectivitycheck.gstatic.com") == PROBE_204);
+  CHECK(probeKind("/generate_204", "clients3.google.com") == PROBE_204);
+  CHECK(probeKind("/gen_204", "www.google.com") == PROBE_204);
+  CHECK(probeKind("/connecttest.txt", "www.msftconnecttest.com") == PROBE_CONNECTTEST);
+  // the legacy Windows check shares a host with the newer one and wants its own body
+  CHECK(probeKind("/ncsi.txt", "www.msftncsi.com") == PROBE_NCSI_TXT);
+  CHECK(strcmp(probeBody(PROBE_NCSI_TXT), "Microsoft NCSI") == 0);
+  CHECK(strcmp(probeBody(PROBE_CONNECTTEST), "Microsoft Connect Test") == 0);
+  CHECK(strcmp(probeBody(PROBE_APPLE),
+               "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>") == 0);
+  CHECK(probeCode(PROBE_204) == 204 && probeCode(PROBE_APPLE) == 200);
+  CHECK(strcmp(probeType(PROBE_APPLE), "text/html") == 0);
+  CHECK(strcmp(probeType(PROBE_204), "text/plain") == 0);
+
+  // everything else still goes to the page
+  CHECK(probeKind("/", "example.com") == PROBE_NONE);
+  CHECK(probeKind("/favicon.ico", "192.168.4.1") == PROBE_NONE);
+  CHECK(probeKind("/whatever", "magneto.local") == PROBE_NONE);
+  CHECK(probeKind("/news", "news.ycombinator.com") == PROBE_NONE);
+  CHECK(probeKind("/api/state", "192.168.4.1") == PROBE_NONE);
+  CHECK(probeKind(nullptr, nullptr) == PROBE_NONE);
+}
+
 int main() {
   testPeriod();
+  testProbe();
   testQs();
   testPwCap();
   testTuneCap();
