@@ -8,9 +8,10 @@
 
 namespace mg {
 
-// Generic ESP32-S3 module (Super Mini / DevKit). GPIO 1-18 and 21 are free and safe; GPIO 1-10
-// carry ADC1. Excluded: 0 (boot strap), 19/20 (USB), 26-32 (flash) and higher pins that octal
-// PSRAM modules reserve.
+// Generic ESP32-S3 module (Seeed XIAO ESP32S3, Super Mini, DevKit). GPIO 1-18 and 21 are free and
+// safe; GPIO 1-10 carry ADC1. Excluded: 0 (boot strap), 19/20 (USB), 26-32 (flash) and higher pins
+// that octal PSRAM modules reserve - which also rules out the XIAO's D6/D7 (GPIO 43/44, the
+// USB-serial pair). On the XIAO, GPIO 1-9 are the header pins D0-D5 and D8-D10.
 inline bool pinAllowed(int p) { return (p >= 1 && p <= 18) || p == 21; }
 inline bool pinAdc(int p) { return p >= 1 && p <= 10; }
 

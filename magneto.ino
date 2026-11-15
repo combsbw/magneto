@@ -17,11 +17,13 @@
  *             the local network (or a separate update network) and pulls the newest build from the
  *             GitHub "latest" release.
  *
- * Hardware (defaults; every pin is remappable in Settings):
- *   GPIO 7  TC4420 -> IRFB4410 low-side gate. HIGH = coil on; idles LOW with a pulldown.
- *   GPIO 1  49E hall, coil center        GPIO 2  49E hall, coil perimeter        (ADC1)
- *   GPIO 3  10k NTC, coil face           GPIO 4  10k NTC, MOSFET                 (ADC1)
- *   GPIO 5/6/8  status RGB (common anode hardwired to 3V3)   GPIO 9  coil-rim LED
+ * Hardware (defaults; every pin is remappable in Settings). D numbers are the Seeed XIAO ESP32S3
+ * silkscreen, GPIO is what the code uses - the defaults fill that board's whole usable header:
+ *   D8  / GPIO 7  TC4420 -> IRFB4410 low-side gate. HIGH = coil on; idles LOW with a pulldown.
+ *   D0  / GPIO 1  49E hall, coil center     D1  / GPIO 2  49E hall, coil perimeter   (ADC1)
+ *   D2  / GPIO 3  10k NTC, coil face        D3  / GPIO 4  10k NTC, MOSFET            (ADC1)
+ *   D4/D5/D9 = GPIO 5/6/8  status RGB (common anode to 3V3)  D10 / GPIO 9  coil-rim LED
+ *   D6/D7 (GPIO 43/44) are the USB-serial pair and are not offered; GPIO 21 is the user LED.
  *
  * The treatment engine runs on the device, so it keeps going with no phone connected. The page is the
  * control panel. Safety: thermistor limits and dT/dt limits trip the coil off, latch across reboots,

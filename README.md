@@ -15,15 +15,22 @@ The control panel is one web page, published two ways:
 
 ## Hardware
 
-| Function | Default pin | Notes |
-|---|---|---|
-| Coil drive | GPIO 7 | TC4420 → IRFB4410 low-side, 24 V coil rail. **HIGH = coil on**, idles LOW with a pulldown. Flyback: 2× 1.5KE33CA TVS in parallel across the coil (≈33 V clamp). |
-| 49E hall, coil center | GPIO 1 | ADC1. Sensor fed from 3V3 (5 V would exceed the pin). |
-| 49E hall, coil perimeter | GPIO 2 | ADC1 |
-| 10k NTC, coil face | GPIO 3 | ADC1, 10k divider to 3V3 |
-| 10k NTC, MOSFET | GPIO 4 | ADC1, 10k divider to 3V3 |
-| Status RGB R / G / B | GPIO 5 / 6 / 8 | Common anode hardwired to 3V3; series resistor per leg |
-| Coil-rim LED | GPIO 9 | Single color, series resistor |
+The board prints D numbers, the firmware speaks GPIO, and the two do not line up. Both are given
+here and in Settings › Pins; the D column is the Seeed XIAO ESP32S3 silkscreen.
+
+| Function | Pin (XIAO) | GPIO | Notes |
+|---|---|---|---|
+| Coil drive | D8 | 7 | TC4420 → IRFB4410 low-side, 24 V coil rail. **HIGH = coil on**, idles LOW with a pulldown. Flyback: 2× 1.5KE33CA TVS in parallel across the coil (≈33 V clamp). |
+| 49E hall, coil center | D0 | 1 | ADC1. Sensor fed from 3V3 (5 V would exceed the pin). |
+| 49E hall, coil perimeter | D1 | 2 | ADC1 |
+| 10k NTC, coil face | D2 | 3 | ADC1, 10k divider to 3V3. Also an ESP32-S3 strapping pin. |
+| 10k NTC, MOSFET | D3 | 4 | ADC1, 10k divider to 3V3 |
+| Status RGB R / G / B | D4 / D5 / D9 | 5 / 6 / 8 | Common anode hardwired to 3V3; series resistor per leg |
+| Coil-rim LED | D10 | 9 | Single color, series resistor |
+
+That is the XIAO ESP32S3's whole usable header. D6 and D7 (GPIO 43/44) are the USB-serial pair and
+are not offered; GPIO 21 is the on-board user LED. GPIOs with no D number are not on the XIAO
+header, though other ESP32-S3 boards break them out, and the firmware still allows them.
 
 Every pin is remappable from Settings › Pins (hall sensors and thermistors must stay on GPIO 1-10,
 the ADC1 pins). Pin changes are refused while the coil runs, and a bad combination falls back to
