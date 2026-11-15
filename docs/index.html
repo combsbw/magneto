@@ -2436,7 +2436,7 @@ function renderConnCard(){
   if(!host)return;
   const key=[WS_OK?WS.target:'',DEV.on?1:0,CONN.busy?1:0,ONDEV?1:0,(WS.why&&WS.why.kind)||'',
     NET?[NET.wanted,NET.radio,NET.fail?1:0,NET.ip,NET.ssid,NET.hasPass?1:0,NET.why||'',NET.updAlt?1:0,
-      NET.tx,NET.bo].join('|'):'-'].join('~');
+      NET.tx,NET.bo,NET.portal?1:0].join('|'):'-'].join('~');
   if(key===connKey&&host.childElementCount)return;
   if(host.contains(document.activeElement))return;      // someone is typing in it
   connKey=key;
@@ -2476,6 +2476,9 @@ function renderConnCard(){
       '<div class="kv"><span class="mut">Radio now</span><b>'+(NET.radio==='sta'?'local network, '+NET.ip:
         (NET.ap||'Magneto')+', '+NET.ip)+'</b></div>';
     if(why)h+='<div class="note small">'+why+'</div>';
+    if(ST&&ST.up<120)h+='<div class="note warn">The device has only been up '+fmtSec(ST.up)+
+      ' (last reset: '+(ST.rst||'?')+(ST.bo>0?', '+ST.bo+' brown-outs':'')+'). If that keeps resetting while you watch it, '+
+      'the device is restarting - which looks exactly like the Wi-Fi dropping. Check the supply before anything else.</div>';
     h+='<div class="row mt8"><div class="lbl">Local Wi-Fi<span class="small mut">2.4 GHz: a router, a guest '+
       'network or a phone hotspot</span></div><input class="txt" id="n_ssid" style="max-width:190px" value="" '+
       'autocapitalize="off" autocorrect="off" spellcheck="false"></div>'+
@@ -2486,6 +2489,12 @@ function renderConnCard(){
       (NET.wanted==='sta'?' checked':'')+'><i></i></span></div>'+
       '<div class="flex mt8"><button class="btn sm pri" id="netSave">Save Wi-Fi</button>'+
       '<button class="btn sm" id="netGo">Save and reboot</button></div>'+
+      '<div class="row mt8"><div class="lbl">Captive portal pop-up<span class="small mut">off keeps phones on the '+
+      'Wi-Fi; on makes the page open by itself</span></div><span class="switch"><input type="checkbox" id="n_portal"'+
+      (NET.portal?' checked':'')+'><i></i></span></div>'+
+      (NET.portal?'<div class="note warn">With this on, the device answers the phone\'s internet check with the page. '+
+        'iOS reads that as “no internet” and an iPhone with cellular will leave the Wi-Fi within seconds. Turn it off '+
+        'unless you want the pop-up more than you want the connection to hold.</div>':'')+
       '<div class="row mt8"><div class="lbl">Radio power<span class="small mut">full reaches further; low draws less from the supply</span></div><div class="seg" id="txSeg">'+
       ['Full','Reduced','Low'].map((t,v)=>'<button data-v="'+v+'" class="'+(NET.tx===v?'on':'')+'">'+t+'</button>').join('')+
       '</div></div>'+
@@ -2531,6 +2540,13 @@ function renderConnCard(){
       await apiQuiet('/api/net',{method:'POST',form:true,body:netBody(want,true)});
       setTimeout(()=>{DEV.rebooting=false;NET=null;kick();},4000);
     },want==='sta'?'Reboot and join it?':'Reboot into its own Wi-Fi?');};
+  const po=$('#n_portal');
+  if(po)po.onchange=async()=>{
+    const mode=NET&&NET.wanted==='sta'?'sta':'ap';
+    const r=await apiQuiet('/api/net',{method:'POST',form:true,
+      body:'mode='+mode+'&portal='+(po.checked?1:0)});
+    if(r){NET=null;connKey='';netRefresh();}
+    else{po.checked=!po.checked;}};
   const tx=$('#txSeg');
   if(tx)tx.addEventListener('click',async e=>{
     const btn=e.target.closest('button');
@@ -2559,16 +2575,31 @@ async function secTest(){
   });
   const ms=Date.now()-t0;
   let i1=null;try{i1=await api('/api/secure',{timeout:4000});}catch(e){}
-  const seen=i1?(' The device has accepted '+i1.opened+' secure connection'+(i1.opened===1?'':'s')+' since it started.'):'';
+  /* The counters say what actually happened, so the answer does not have to guess. opened going up
+     means the handshake finished and the socket was accepted - the certificate IS trusted, whatever
+     went wrong afterwards. refused going up means the socket opened but the page came from an
+     address the device does not accept. Neither moving means it never got that far, which is a
+     trust problem OR simply the Wi-Fi dropping mid-handshake - and saying "not trusted" for both is
+     how you end up reinstalling a certificate that was fine all along. */
+  const d=(a,b,k)=>(a&&b&&typeof a[k]==='number'&&typeof b[k]==='number')?b[k]-a[k]:null;
+  const dOpen=d(i0,i1,'opened'),dRef=d(i0,i1,'refused');
+  const seen=i1?(' The device has accepted '+i1.opened+' secure connection'+(i1.opened===1?'':'s')+' since it started'+
+    (dOpen!==null?', '+dOpen+' of them during this test.':'.')):'';
+  const lost=i1===null?' The device also stopped answering on http during the test, so the Wi-Fi itself dropped - fix that first.':'';
   if(res==='open')out.textContent='Works: this phone trusts the certificate and the device answered over the secure link ('+ms+' ms).'+seen+
     ' If the installed app still cannot connect, the cause is on the app side - its Local Network permission, or the Wi-Fi it is on.';
   else if(i1&&!i1.running)out.textContent='The secure server is not running on the device. Reboot it and test again; if it stays this way, '+
     'the certificate step did not finish at boot (watch the serial log).';
-  else if(res==='timeout')out.textContent='The secure link did not answer within 10 s.'+seen+' Make sure you are on the device Wi-Fi and try again.';
-  else out.textContent='The phone turned the secure link down after '+ms+' ms, and the device is running it.'+seen+
-    ' So this phone does not trust the certificate yet. Install it above, then switch Magneto on under '+
-    'Settings > General > About > Certificate Trust Settings. If it is already on, delete the Magneto profile '+
-    '(Settings > General > VPN & Device Management) and install it again.';
+  else if(dRef>0)out.textContent='The device refused this page: the socket opened, so the certificate is trusted, but the page was '+
+    'served from an address it does not accept. Open the app from the device at http://192.168.4.1, or from GitHub Pages.';
+  else if(dOpen>0)out.textContent='The certificate is trusted - the device accepted '+dOpen+' connection'+(dOpen===1?'':'s')+
+    ' during this test - but the link did not stay up ('+ms+' ms). That is the Wi-Fi dropping, not the certificate. '+
+    'Check Settings > Device: if Up keeps restarting, the device is rebooting; if brown-outs are counted, it is the supply.';
+  else if(res==='timeout')out.textContent='The secure link did not answer within 10 s.'+seen+lost+' Make sure you are on the device Wi-Fi and try again.';
+  else out.textContent='The link did not open ('+ms+' ms) and the device logged no connection attempt.'+seen+lost+
+    ' Two things look the same here: the certificate not being trusted, and the Wi-Fi dropping before the handshake finishes. '+
+    'Check Settings > Device first - if Up keeps resetting to a few seconds, fix that before touching the certificate. '+
+    'Otherwise install it above, then switch Magneto on under Settings > General > About > Certificate Trust Settings.';
   btn.disabled=false;
 }
 
