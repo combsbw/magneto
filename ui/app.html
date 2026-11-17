@@ -90,6 +90,16 @@ html[data-th="dark"] .btn{box-shadow:0 2px 0 rgba(0,0,0,.5),0 3px 7px rgba(0,0,0
 .btn:disabled{opacity:.4;cursor:default;transform:none}
 .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:9px;box-shadow:0 1.5px 0 var(--line2),0 2px 4px rgba(10,18,32,.12),inset 0 1px 0 rgba(255,255,255,.2)}
 .btn.sm:active{transform:translateY(1.5px);box-shadow:inset 0 2px 4px rgba(10,18,32,.2)}
+/* Explicit pressed-state class: iOS Safari only honors :active once something on the page has a
+   touchstart listener, so without one every tap looks identical whether it landed or not - there is
+   no way to tell "pressed" from "the app stalled". A delegated pointerdown/up listener (below, in the
+   script) adds this class instead of depending on :active alone. */
+.btn.pressed{transform:translateY(2px);box-shadow:0 0 0 var(--line2),0 1px 2px rgba(10,18,32,.18),inset 0 2px 5px rgba(10,18,32,.22)}
+.btn.pri.pressed,.btn.good.pressed{box-shadow:0 0 0 rgba(0,0,0,.3),inset 0 2px 6px rgba(0,0,0,.35)}
+.btn.ghost.pressed{transform:translateY(1px)}
+.btn.sm.pressed{transform:translateY(1.5px);box-shadow:inset 0 2px 4px rgba(10,18,32,.2)}
+.chip.pressed,.seg button.pressed,.tabs button.pressed,.iconbtn.pressed,.vs .lockb.pressed,
+.vs .step button.pressed,.pre .ib.pressed,.lay .rm.pressed{filter:brightness(.82);transform:translateY(1px)}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{border:1px solid var(--line);background:var(--chipbg);color:var(--mut);border-radius:99px;
   padding:7px 13px;font-size:13px;cursor:pointer;font-weight:550}
@@ -535,6 +545,36 @@ details.fold>div{padding-bottom:11px}
 
 <div>
   <div class="card">
+    <h2>Signal filtering</h2>
+    <div class="row"><div class="lbl">Smoothing<span class="small mut">settles the live field and dB/dt readouts - heavier
+      settles slower and can round off a sharp real peak</span></div>
+      <div class="seg" id="filtMode">
+        <button data-m="0" class="on">Raw</button>
+        <button data-m="1">Light</button>
+        <button data-m="2">Medium</button>
+        <button data-m="3">Heavy</button>
+      </div></div>
+    <div class="row"><div class="lbl">Mains hum notch<span class="small mut">narrow filter at the mains frequency,
+      applied to the signal itself before anything else sees it</span></div>
+      <span class="switch"><input type="checkbox" id="filtNotch"><i></i></span></div>
+    <div class="row hide" id="rowNotchHz"><div class="lbl">Mains frequency</div>
+      <div class="seg" id="filtNotchHz"><button data-hz="60" class="on">60 Hz</button><button data-hz="50">50 Hz</button></div></div>
+    <div class="row"><div class="lbl">Spectrum averaging<span class="small mut">blends the FFT across frames to pull a
+      tone out of noise, without slowing the measured-frequency readout itself</span></div>
+      <div class="seg" id="filtSpecAvg">
+        <button data-a="0" class="on">Off</button>
+        <button data-a="1">Low</button>
+        <button data-a="2">Med</button>
+        <button data-a="3">High</button>
+        <button data-a="4">Max</button>
+      </div></div>
+    <div class="note small">The notch cleans the signal itself - the scope, pulse shape, spectrum and every stat
+      below all see the result. Smoothing only settles the two live tiles (and the dB/dt peak stat); the scope,
+      the |B| peak/average/RMS stats and the FFT keep seeing the signal exactly as measured, so Raw always shows
+      what the sensor is actually reporting.</div>
+  </div>
+
+  <div class="card">
     <h2>Scope</h2>
     <div class="chbar">
       <div class="seg" id="scopeSrc">
@@ -565,6 +605,8 @@ details.fold>div{padding-bottom:11px}
 
   <div class="card">
     <h2>Spectrum</h2>
+    <div class="small mut mb8">FFT of the center field, 0-300 Hz - the source of the measured-frequency readout
+      shown on Treat and in the Field tiles above. The box under the chart reports the peak once one is found.</div>
     <div class="ch h200"><canvas id="chSpec"></canvas><div class="cap" id="specCap"></div></div>
   </div>
 </div>
@@ -725,6 +767,21 @@ function twoTap(btn,fn,txt){const old=btn.textContent;
   btn.dataset.l0=old;btn.textContent=txt||'Tap again';
   ARMED.set(btn,setTimeout(()=>{ARMED.delete(btn);btn.textContent=btn.dataset.l0;},3000));}
 
+/* Pressed-state feedback for every tappable control, delegated from the document so it covers rows
+   built later from a template (stage editor, presets, pins, layers) with nothing to rebind. iOS
+   Safari needs a real touch listener before :active means anything, which is exactly what this is. */
+const PRESS_SEL='.btn,.chip,.seg button,.tabs button,.iconbtn,.vs .lockb,.vs .step button,.pre .ib,.lay .rm';
+let pressedEl=null;
+function pressClear(){if(pressedEl){pressedEl.classList.remove('pressed');pressedEl=null;}}
+document.addEventListener('pointerdown',e=>{
+  const b=e.target.closest(PRESS_SEL);
+  if(!b||b.disabled)return;
+  pressedEl=b;
+  b.classList.add('pressed');
+},{passive:true});
+document.addEventListener('pointerup',pressClear,{passive:true});
+document.addEventListener('pointercancel',pressClear,{passive:true});
+
 /* ================= theme ================= */
 function applyTheme(t){document.documentElement.dataset.th=t;store('mg-theme',t);}
 applyTheme(load('mg-theme',matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
@@ -840,7 +897,7 @@ async function devAttach(j){
   }
   connRender();
   renderState();
-  if(!DEV.polling){DEV.polling=true;devPoll();}
+  if(!DEV.polling){DEV.polling=true;pollKick();}
 }
 async function devConnect(manual){
   if(CONN.busy)return false;
@@ -860,7 +917,7 @@ async function devConnect(manual){
 }
 function kick(){                                    /* page came back to the front, or a manual nudge */
   if(!DEV.on)devConnect(false);
-  else if(!DEV.polling){DEV.polling=true;devPoll();}
+  else if(!DEV.polling){DEV.polling=true;pollKick();}
   renderState();
 }
 
@@ -913,6 +970,7 @@ function defCfg(){return{
   led:{mode:0,col:'#50c8ff',master:80,dataSrc:0,dataMin:70,dataMax:110,coilBright:100},
   hall:{sens5c:1.4,sens5p:1.4,vcc:3.3,ratio:true},
   therm:{beta:3950,r0:10,rs:10,top:false},
+  filt:{mode:0,notch:false,notchHz:60,specAvg:0},
   coil:{layers:[{t:45,awg:20},{t:22,awg:12}],rin:0.75,ry:0.75,sameW:true,ins:0.3,washer:true,
     v:24,luh:0,rm:0,rds:10,vf:33,depth:2,gap:2},
   ui:{stagesOn:false,timerMin:30,lockHz:false,lockPw:false}
@@ -1136,7 +1194,10 @@ function skinDepth(hz,sigma){return hz>0?Math.sqrt(2/(2*Math.PI*hz*MU0*(sigma||0
    One tiny renderer: DPR-aware, nice 1/2/5 ticks, smoothed autoscale (an unsmoothed autoscale
    makes a steady signal look unsteady), min/max band support so pulse edges survive decimation. */
 const CHS=new Map();
-function chGet(cv){let c=CHS.get(cv);if(!c){c={y0:0,y1:1};CHS.set(cv,c);}return c;}
+// y0/y1 start un-set (not 0/1): a chart's first-ever draw then snaps straight to the real data range
+// instead of creeping 25%/call from a placeholder, which used to mean the signal-shape chart was
+// still "arriving" by the time the sensor stack froze and was never actually seen settled.
+function chGet(cv){let c=CHS.get(cv);if(!c){c={y0:NaN,y1:NaN};CHS.set(cv,c);}return c;}
 function niceStep(span){const raw=span/5,p=Math.pow(10,Math.floor(Math.log10(raw||1)));
   for(const m of[1,2,5,10])if(raw<=m*p)return m*p;return 10*p;}
 function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
@@ -1159,8 +1220,19 @@ function drawChart(cv,opt){
   if(opt.zero&&lo>0)lo=0;
   const span=(hi-lo)||1;lo-=span*0.07;hi+=span*0.07;
   const st=chGet(cv);
-  if(opt.noSmooth||!Number.isFinite(st.y0)){st.y0=lo;st.y1=hi;}
-  else{st.y0+=(lo-st.y0)*0.25;st.y1+=(hi-st.y1)*0.25;}
+  if(opt.noSmooth||!Number.isFinite(st.y0)){
+    st.y0=lo;st.y1=hi;
+  }else{
+    // Deadband: ordinary sample noise moves lo/hi a little on every single frame, and chasing all of
+    // it is what reads as the axis "breathing" even though nothing about the signal actually changed.
+    // Only retarget once the data has moved more than a small fraction of the current span - a real
+    // change (a new scope span, an amplitude change) still clears that easily and still eases in over
+    // a few redraws, same as before.
+    const band=((st.y1-st.y0)||1)*0.06;
+    if(Math.abs(lo-st.y0)>band||Math.abs(hi-st.y1)>band){
+      st.y0+=(lo-st.y0)*0.25;st.y1+=(hi-st.y1)*0.25;
+    }
+  }
   const y0=st.y0,y1=st.y1;
   const X=i=>padL+iw*(opt.n>1?i/(opt.n-1):0);
   const Y=v=>padT+ih*(1-(v-y0)/(y1-y0||1));
@@ -1343,28 +1415,69 @@ function tempRecord(s){
   while(TEMPHIST.length>620)TEMPHIST.shift();
 }
 
-async function devPoll(){
+/* One request in flight, system-wide, ever. /api/state and - while the Measure tab is open - the
+   wave/fold/spec payloads used to be two independent timer chains that could each have a request in
+   the air at once, so the single-connection board saw roughly double the traffic the moment anyone
+   opened Measure: exactly the extra load that was starving the ADC sampler into the freeze this was
+   built to fix. They now take turns through one chain instead - a state tick, then (only on the
+   Measure tab) a measurement tick, alternating - so each stays roughly half as fresh running alone
+   would give it, but neither ever queues behind the other. */
+let pollTimer=0, pollN=0;
+function pollKick(){ clearTimeout(pollTimer); pollN=0; pollTick(); }          // (re)start the loop fresh
+function measureKick(){ clearTimeout(pollTimer); pollN=1; pollTick(); renderMeasure(); }  // jump to a measurement turn
+async function pollTick(){
+  clearTimeout(pollTimer);
   if(!DEV.on){DEV.polling=false;return;}
-  if(!DEV.rebooting){
-    try{
-      const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
-      if(j&&j.app==='magneto'){
-        const was=ST;ST=j;
-        DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
-        clockBase={t:j.t,at:Date.now(),run:j.s==='run',total:j.total};
-        tempRecord(j);
-        if(j.rev&&cfgRev&&j.rev!==cfgRev&&!cfgPushing){cfgRev=j.rev;cfgPull();}
-        else if(j.rev&&!cfgRev)cfgRev=j.rev;
-        if(!was||was.s!==j.s)renderPresets();
-        connRender();
+  const measuring=TAB==='measure'&&!document.hidden;
+  let wait=350;
+  if(document.hidden){
+    wait=2500;
+  }else if(BUSY.n>0){
+    wait=120;                          /* something the user just did is in flight: come back shortly */
+  }else if(!DEV.rebooting){
+    const n=pollN++;
+    if(measuring&&(n&1)){               // odd ticks: a measurement payload, in rotation
+      const kind=(n>>1)%4;              // wave, fold, wave, spec - the scope twice as often as the rest
+      try{
+        if(kind===0||kind===2){
+          if(!SCOPE.hold){
+            const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
+            if(r&&r.n)SCOPE.wave=r;
+          }
+          scopeDraw();
+          wait=SCOPE.ms>=3000?500:250;
+        }else if(kind===1){
+          SCOPE.fold=await apiQuiet('/api/fold');
+          foldDraw();
+        }else{
+          SCOPE.spec=await apiQuiet('/api/spec');
+          specDraw();
+        }
+      }catch(e){
+        /* a drawing bug must never be able to wedge the one poller /api/state rides on too */
       }
-    }catch(e){
-      /* a few misses are normal on a busy single-connection server; give up only after several */
-      if(++DEV.fails>=4){DEV.on=false;DEV.polling=false;connRender();devConnect(false);return;}
+    }else{                              // even ticks, or off the Measure tab entirely: the device state
+      try{
+        const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
+        if(j&&j.app==='magneto'){
+          const was=ST;ST=j;
+          DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
+          clockBase={t:j.t,at:Date.now(),run:j.s==='run',total:j.total};
+          tempRecord(j);
+          if(j.rev&&cfgRev&&j.rev!==cfgRev&&!cfgPushing){cfgRev=j.rev;cfgPull();}
+          else if(j.rev&&!cfgRev)cfgRev=j.rev;
+          if(!was||was.s!==j.s)renderPresets();
+          connRender();
+        }
+      }catch(e){
+        /* a few misses are normal on a busy single-connection server; give up only after several */
+        if(++DEV.fails>=4){DEV.on=false;DEV.polling=false;connRender();devConnect(false);return;}
+      }
+      wait=DEV.fails?900:(measuring?250:350);
     }
   }
   renderState();
-  setTimeout(devPoll,DEV.fails?900:(document.hidden?2500:(BUSY.n>0?500:350)));
+  pollTimer=setTimeout(pollTick,wait);
 }
 setInterval(()=>{if(clockBase.run)renderState();},500);
 
@@ -1402,7 +1515,7 @@ async function cmd(c,args){
   }catch(e){
     if(e.message==='probe')$('#probeNote').classList.remove('hide');
     if(e.message==='cool')$('#tripBox').innerHTML='<b>Still warm.</b> The reset takes once a fresh reading is at or below the limit.';
-    devPoll&&kick();                       /* the guess was wrong, or the call was lost: resync */
+    kick();                                /* the guess was wrong, or the call was lost: resync */
     return null;
   }
 }
@@ -2048,6 +2161,26 @@ function fillFormulas(){
     '<div class="small mut mt8">'+f[2]+'</div></div>').join('');
 }
 /* ================= measure tab ================= */
+/* ---- signal filtering ----
+   Pushed to the board the same way every other setting is: part of cfg, through touch() -> cfgPush,
+   parsed by mg::cfgFromJson into Config.filt and applied in sense.cpp. Off (mode 0 / notch off /
+   specAvg 0) reproduces exactly what the firmware always did. */
+function fillFilt(){
+  const f=cfg.filt;
+  $$('#filtMode button').forEach(b=>b.classList.toggle('on',Number(b.dataset.m)===f.mode));
+  $('#filtNotch').checked=f.notch;
+  $('#rowNotchHz').classList.toggle('hide',!f.notch);
+  $$('#filtNotchHz button').forEach(b=>b.classList.toggle('on',Number(b.dataset.hz)===f.notchHz));
+  $$('#filtSpecAvg button').forEach(b=>b.classList.toggle('on',Number(b.dataset.a)===f.specAvg));
+}
+$('#filtMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  cfg.filt.mode=Number(b.dataset.m);fillFilt();touch();});
+$('#filtNotch').addEventListener('change',e=>{cfg.filt.notch=e.target.checked;fillFilt();touch();});
+$('#filtNotchHz').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  cfg.filt.notchHz=Number(b.dataset.hz);fillFilt();touch();});
+$('#filtSpecAvg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  cfg.filt.specAvg=Number(b.dataset.a);fillFilt();touch();});
+
 const SCOPE={ch:0,ms:1000,hold:false,wave:null,fold:null,spec:null};
 $('#scopeSrc').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   SCOPE.ch=Number(b.dataset.ch);
@@ -2061,49 +2194,34 @@ $('#scopeHold').onclick=()=>{SCOPE.hold=!SCOPE.hold;
   $('#scopeHold').textContent=SCOPE.hold?'Resume':'Hold';
   $('#scopeHold').classList.toggle('pri',SCOPE.hold);};
 
-/* The three measurement payloads used to be polled by three independent timers (300 / 700 / 900 ms),
-   which guarantees they overlap - and the board serves one request at a time, so everything else
-   queued behind them. They share one poller now: at most one measurement request is ever in flight,
-   it yields to anything the user just did, and it stops entirely off the Measure tab. */
-let measTimer=0,measTurn=0;
-function measureKick(){
-  clearTimeout(measTimer);
-  measTurn=0;
-  measLoop();
-  renderMeasure();
-}
-async function measLoop(){
-  clearTimeout(measTimer);
-  let wait=350;
-  if(TAB!=='measure'||!DEV.on||document.hidden){
-    wait=1200;
-  }else if(BUSY.n>0){
-    wait=120;                                   /* a command is in flight: come back in a moment */
-  }else{
-    const turn=measTurn++%4;                    /* the scope twice as often as the other two */
-    if(turn===0||turn===2){
-      if(!SCOPE.hold){
-        const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
-        if(r&&r.n)SCOPE.wave=r;
-      }
-      scopeDraw();
-      wait=SCOPE.ms>=3000?500:250;
-    }else if(turn===1){
-      SCOPE.fold=await apiQuiet('/api/fold');
-      foldDraw();
-    }else{
-      SCOPE.spec=await apiQuiet('/api/spec');
-      specDraw();
-    }
-  }
-  measTimer=setTimeout(measLoop,wait);
-}
+// polling itself (pollTick, measureKick) lives with devPoll's old spot, above - one shared single-
+// flight queue for /api/state and these three payloads now, not two competing timer chains.
 function scopeDraw(){
   const r=SCOPE.wave;
   if(!r||!r.n)return;
   drawChart($('#chScope'),{n:r.n,series:[{ys:r.mn,ys2:r.mx,color:SCOPE.ch===2?cssVar('--warn'):cssVar('--acc')}],
     x0:-r.ms/1000,x1:0,xu:'s',zero:false});
   $('#scopeCap').textContent=(SCOPE.ch===2?'dB/dt, mT/s':'|B|, µT')+' · '+fmt(r.fs/1000,1)+' kS/s'+(SCOPE.hold?' · held':'');
+}
+// The RL model wave, cached on its own inputs. foldDraw() used to re-solve this (≈1400 exp() calls)
+// on every redraw, which was fine at one redraw per fetch; now that redraws happen every animation
+// frame (see the render loop below) instead, re-solving an unchanged pulse that often would be
+// thousands of wasted solves a minute for a chart that looks identical.
+let FOLD_CACHE={key:'',model:null};
+function foldModelWave(M,pw,per,n){
+  const key=MCACHE.key+'|'+pw+'|'+per+'|'+n;
+  if(FOLD_CACHE.key!==key){
+    const p=solvePulse(cfg.coil.v,M.L,M.R,cfg.coil.vf,pw,per);
+    const model=new Array(n).fill(0);
+    let wi=0;
+    for(let i=0;i<n;i++){
+      const t=i/n*per;
+      while(wi<p.wave.length-1&&p.wave[wi+1][0]<=t)wi++;
+      model[i]=p.wave[wi][1]*M.sensCPerA*1e6;
+    }
+    FOLD_CACHE={key,model};
+  }
+  return FOLD_CACHE.model;
 }
 function foldDraw(){
   const r=SCOPE.fold,cv=$('#chFold');
@@ -2115,16 +2233,8 @@ function foldDraw(){
   const M=coilModelCached();
   let model=null;
   if(M&&ST){
-    const hz=1e6/r.per;
-    const p=solvePulse(cfg.coil.v,M.L,M.R,cfg.coil.vf,ST.pw||curPw(),r.per);
-    model=new Array(r.n).fill(0);
-    let wi=0;
-    for(let i=0;i<r.n;i++){
-      const t=i/r.n*r.per;
-      while(wi<p.wave.length-1&&p.wave[wi+1][0]<=t)wi++;
-      model[i]=p.wave[wi][1]*M.sensCPerA*1e6;
-    }
-    // scale the model to the measured amplitude: the shape is the model's, the height is real
+    model=foldModelWave(M,ST.pw||curPw(),r.per,r.n).slice();
+    // scale the (cached, shape-only) model to this frame's measured amplitude without touching the cache
     const mMax=Math.max(...r.b),dMax=Math.max(...model);
     if(dMax>1e-9&&mMax>0.5)for(let i=0;i<r.n;i++)model[i]*=mMax/dMax;
   }
@@ -2608,7 +2718,7 @@ function fillAll(){
   $('#stagesOn').checked=cfg.ui.stagesOn;
   $('#stagesBody').classList.toggle('hide',!cfg.ui.stagesOn);
   $('#stagesOffNote').classList.toggle('hide',cfg.ui.stagesOn);
-  fillCoilInputs();fillSafety();fillLed();fillSensors();fillPins();
+  fillCoilInputs();fillSafety();fillLed();fillSensors();fillPins();fillFilt();
   slidersPaint();renderPlanInfo();renderPresets();
   MCACHE.key='';if(TAB==='coil')coilRecalc();
 }
@@ -2617,6 +2727,17 @@ setInterval(()=>{if(TAB==='set'&&DEV.on&&!NET)netRefresh();},1500);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)kick();});
 addEventListener('pageshow',kick);
 addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='measure'){scopeDraw();foldDraw();specDraw();}},200));
+/* The Measure tab's three live charts redraw every animation frame instead of only when a fetch
+   lands - a real autoscale move then glides over several frames instead of jumping once per poll,
+   and a canvas that resizes (rotation, a tab becoming visible) is repainted at once instead of
+   waiting on the next measurement to arrive. requestAnimationFrame already stops firing on its own
+   once the page is backgrounded, so this costs nothing off the Measure tab or with the tab hidden.
+   Wrapped so a transient drawing bug can only skip a frame, never kill the loop permanently. */
+function measureRenderTick(){
+  if(TAB==='measure'&&DEV.on){try{scopeDraw();foldDraw();specDraw();}catch(e){}}
+  requestAnimationFrame(measureRenderTick);
+}
+requestAnimationFrame(measureRenderTick);
 // suppress the iOS long-press menu on controls (inputs keep theirs)
 document.addEventListener('contextmenu',e=>{if(!e.target.closest('input,textarea'))e.preventDefault();});
 

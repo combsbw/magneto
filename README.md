@@ -58,7 +58,13 @@ the defaults instead of bricking the board.
   at ~80 kS/s total; per-channel zeroing with holdoff; peak / mean / RMS since clear; a min/max
   decimated scope; a phase-folded pulse profile (sampling-scope style) with the RL model overlaid
   for the microsecond edges; a 4096-point Hann FFT with sub-bin peak, amplitude and SNR; and the
-  measured field carried to the target depth through the coil model.
+  measured field carried to the target depth through the coil model. The sampler and the FFT run on
+  their own core, away from Wi-Fi, so a busy page can never starve the ADC.
+- **Signal filtering** (Measure › Signal filtering): a smoothing strength (Raw/Light/Medium/Heavy)
+  for the live field and dB/dt tiles, an optional mains-hum notch (50/60 Hz) applied to the signal
+  itself - ahead of the scope, the fold, the FFT and every stat, not a display-only overlay - and
+  spectrum frame averaging to pull a tone out of noise without slowing the measured-frequency readout.
+  Raw/off reproduces the firmware's original, unfiltered behavior exactly.
 - **Coil tab**: geometry editor (up to six pancake layers with independent turns and AWG, shared
   or per-layer width, circular or elliptical, open center, insulation) with a face-on view and a
   scaled cross-section drawing, exact loop-sum field model (elliptic integrals), inductance estimate
@@ -91,8 +97,11 @@ the defaults instead of bricking the board.
   ArduinoOTA (port 3232) also work.
 - **Responsiveness**: everything is a plain fetch to the board on the same origin - no secure
   socket, so no request is relayed through a loopback TCP connection just to reach the handler next
-  to it. The scope, FFT and pulse-fold payloads share one poller that yields to anything you just
-  did, so a button press is never queued behind a 6 kB waveform.
+  to it. State, scope, FFT and pulse-fold all take turns through one poller - never more than one
+  request in flight, board-wide - and it yields to anything you just did, so a button press is never
+  queued behind a 6 kB waveform. The three Measure-tab charts redraw every animation frame from
+  whatever was last fetched, so a rescale glides instead of jumping once per poll, and every tappable
+  control shows a pressed state on touch (not just a desktop `:active`).
 
 ## Building
 
