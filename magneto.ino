@@ -70,6 +70,7 @@
 #define CFG_MAX_BYTES 12000
 #define PRESETS_MAX_BYTES 32000
 #define IDLE_FIRST_MS 400
+#define IDLE_HARD_MS 3000UL      // close a stale keep-alive connection unconditionally past this, even alone
 static bool fsOk = false;
 
 // ---- shared state -------------------------------------------------------------------------------------------------
@@ -109,12 +110,17 @@ static uint32_t stuckSince = 0;
 static SenseSnap snapCache;              // refreshed each loop pass for safety checks and the LEDs
 
 // Safari opens spare connections and sends nothing; drop a silent one when another is waiting.
+// A fetch the page abandons client-side (its own AbortController timeout) can leave the same kind of
+// idle, nobody-left-to-send-the-next-byte connection with no other client ever showing up to trigger
+// the cheap path above - on a radio with only a handful of sockets, that is the kind of leak that
+// used to need a reboot to clear. Past IDLE_HARD_MS it closes unconditionally, alone or not.
 class MagServer : public WebServer {
  public:
   explicit MagServer(int port) : WebServer(port) {}
   void serve() {
     if (_currentStatus == HC_WAIT_READ && _currentClient.connected() && !_currentClient.available() &&
-        (millis() - _statusChange) > IDLE_FIRST_MS && _server.hasClient()) {
+        (millis() - _statusChange) > IDLE_FIRST_MS &&
+        (_server.hasClient() || (millis() - _statusChange) > IDLE_HARD_MS)) {
       _currentClient.stop();
       _currentClient = WiFiClient();
       _currentStatus = HC_NONE;
@@ -128,6 +134,11 @@ static DNSServer dns;
 #define LOCK() xSemaphoreTake(engMtx, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(engMtx)
 
+static void applyFilt() {
+  SenseFilt filt{cfg.filt.mode, cfg.filt.notch, cfg.filt.notchHz, cfg.filt.specAvg};
+  senseSetFilt(filt);
+}
+
 static void applyHardware() {
   ledsApply(cfg.pins);
   coilInit(cfg.pins.drive);
@@ -135,6 +146,7 @@ static void applyHardware() {
   SenseCal cal{cfg.hall.sens5c, cfg.hall.sens5p, cfg.hall.vcc, cfg.hall.ratio,
                cfg.therm.beta, cfg.therm.r0k, cfg.therm.rsk, cfg.therm.top};
   senseSetCal(cal);
+  applyFilt();
 }
 
 // ---- LED task: 250 Hz --------------------------------------------------------------------------------------------
@@ -351,6 +363,7 @@ static void handleConfigPost() {
     SenseCal cal{cfg.hall.sens5c, cfg.hall.sens5p, cfg.hall.vcc, cfg.hall.ratio,
                  cfg.therm.beta, cfg.therm.r0k, cfg.therm.rsk, cfg.therm.top};
     senseSetCal(cal);
+    applyFilt();
   }
   if (body != cfgRaw) {
     cfgRaw = body;
@@ -394,8 +407,13 @@ static char* bigBuf(size_t cap) {
   return buf;
 }
 
+// These three are the biggest, most frequently-polled payloads on the board (the Measure tab cycles
+// through them continuously) and the ones most worth never leaving to a keep-alive idle-timeout: each
+// closes its own connection deterministically rather than waiting to be recycled, trading one extra
+// TCP handshake per poll for a socket that can never be left stranded.
 static void handleWave() {
   lastApiMs = millis();
+  server.sendHeader("Connection", "close");
   int ch = server.arg("ch").toInt();
   uint32_t ms = (uint32_t)server.arg("ms").toInt();
   if (ms < 10) ms = 10;
@@ -416,6 +434,7 @@ static void handleWave() {
 
 static void handleSpec() {
   lastApiMs = millis();
+  server.sendHeader("Connection", "close");
   static float bins[256];
   float df = 0;
   int n = senseSpec(bins, 256, &df);
@@ -432,6 +451,7 @@ static void handleSpec() {
 
 static void handleFold() {
   lastApiMs = millis();
+  server.sendHeader("Connection", "close");
   static float bins[240];
   uint32_t per = 0, cyc = 0;
   int n = senseFold(bins, 240, &per, &cyc);

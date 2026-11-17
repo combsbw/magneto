@@ -38,10 +38,22 @@ struct SenseSnap {
   uint32_t seq;
 };
 
+// Signal cleaning: display smoothing strength, an optional mains-hum notch (applied to both hall
+// channels ahead of the ring/fold/FFT, not just the display - "clean the signal", not a cosmetic
+// overlay) and spectrum frame averaging. mode 0 / notch off / specAvg 0 is bit-for-bit what the
+// firmware did before this existed.
+struct SenseFilt {
+  uint8_t mode;      // 0 raw, 1 light, 2 medium, 3 heavy
+  bool notch;
+  uint8_t notchHz;   // 50 or 60
+  uint8_t specAvg;   // 0..4
+};
+
 // Claims the four ADC pins and starts the DMA controller plus the two tasks. Call once from setup;
 // call again (same function) after a pin change - it restarts the controller cleanly.
 bool senseBegin(int hallC, int hallP, int thC, int thF);
 void senseSetCal(const SenseCal& cal);
+void senseSetFilt(const SenseFilt& filt);
 
 void senseZero(int which);        // 0 center, 1 perimeter, 2 both: average 0.25 s and store as the zero
 void senseZeroClear(int which);

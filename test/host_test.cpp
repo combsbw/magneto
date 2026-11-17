@@ -7,8 +7,11 @@
 #include "../engine.h"
 #include "../json.h"
 #include "../config.h"
+#include "../filt.h"
 #include "../ghupdate.h"
 #include "../netprobe.h"
+#include <cmath>
+#include <initializer_list>
 
 static int failures = 0;
 
@@ -167,6 +170,7 @@ static void testConfig() {
   CHECK(c.safe.coilMaxF == 110.f && !c.safe.needProbe);
   CHECK(c.led.mode == 1 && c.led.master == 70);
   CHECK(near(c.hall.sens5p, 1.8, 1e-4));
+  CHECK(c.filt.mode == 0 && !c.filt.notch && c.filt.notchHz == 60 && c.filt.specAvg == 0);  // default: off
 
   // a duplicate pin falls back to defaults but keeps polarity
   const char* bad = "{\"pins\":{\"drive\":7,\"hallC\":7,\"hallP\":2,\"thC\":3,\"thF\":4,\"r\":5,\"g\":6,\"b\":8,\"coil\":9,\"anode\":false}}";
@@ -200,10 +204,60 @@ static void testConfig() {
   CHECK(mg::cfgFromJson(magOff, strlen(magOff), c, &pinsOk));
   CHECK(!c.safe.magAp && c.safe.magUt == 200.f && c.safe.magSec == 60.f);   // out of range clamps
 
+  const char* filt = "{\"filt\":{\"mode\":2,\"notch\":true,\"notchHz\":50,\"specAvg\":3}}";
+  CHECK(mg::cfgFromJson(filt, strlen(filt), c, &pinsOk));
+  CHECK(c.filt.mode == 2 && c.filt.notch && c.filt.notchHz == 50 && c.filt.specAvg == 3);
+  const char* filtClamp = "{\"filt\":{\"mode\":99,\"notchHz\":52,\"specAvg\":99}}";
+  CHECK(mg::cfgFromJson(filtClamp, strlen(filtClamp), c, &pinsOk));
+  CHECK(c.filt.mode == mg::FILT_MODE_MAX && c.filt.notchHz == 50 && c.filt.specAvg == mg::SPEC_AVG_MAX);
+
   CHECK(mg::presetsJsonOk("[]", 2));
   CHECK(mg::presetsJsonOk("[{\"name\":\"a\"}]", 14));
   CHECK(!mg::presetsJsonOk("{}", 2));
   CHECK(!mg::presetsJsonOk("[{", 2));
+}
+
+// The pipeline's "off" state has to reproduce exactly what it did before filtering existed, and the
+// notch has to actually notch (and never blow up) across both mains frequencies.
+static void testFilt() {
+  CHECK(mg::filtFieldHz(0) == 300.f);     // the fixed cutoffs this always used, unchanged at mode 0
+  CHECK(mg::filtDbHz(0) == 500.f);
+  CHECK(mg::filtModeClamp(-5) == 0 && mg::filtModeClamp(99) == mg::FILT_MODE_MAX);
+  CHECK(mg::specAvgClamp(-5) == 0 && mg::specAvgClamp(99) == mg::SPEC_AVG_MAX);
+  CHECK(mg::filtSpecAlpha(0) == 1.f);      // off = each frame replaces the last, no blending
+  for (int m = 1; m <= mg::FILT_MODE_MAX; m++) {
+    CHECK(mg::filtFieldHz(m) < mg::filtFieldHz(m - 1));   // strictly stronger smoothing each step up
+    CHECK(mg::filtDbHz(m) < mg::filtDbHz(m - 1));
+  }
+  CHECK(near(mg::emaAlpha(0.f, 1000.f), 1.f));     // no cutoff = no smoothing (pass the sample through)
+  CHECK(mg::emaAlpha(300.f, 0.f) == 1.f);          // guarded against a bogus sample rate
+  CHECK(mg::emaAlpha(300.f, 10000.f) > 0.f && mg::emaAlpha(300.f, 10000.f) < 1.f);
+
+  // identity (pass-through) when the frequency makes no sense for this sample rate
+  mg::Biquad id = mg::notchCoeffs(0.f, 8000.f, 12.f);
+  CHECK(id.b0 == 1.f && id.b1 == 0.f && id.b2 == 0.f && id.a1 == 0.f && id.a2 == 0.f);
+  id = mg::notchCoeffs(60.f, 100.f, 12.f);          // past Nyquist at this rate
+  CHECK(id.b0 == 1.f && id.a1 == 0.f);
+
+  for (float f0 : {50.f, 60.f}) {
+    const float fs = 8000.f;
+    mg::Biquad c = mg::notchCoeffs(f0, fs, 12.f);
+    auto rmsAt = [&](float freq) {
+      mg::BiquadState st;
+      const int n = 4000;
+      double inSq = 0, outSq = 0;
+      for (int i = 0; i < n; i++) {
+        float t = (float)i / fs;
+        float x = sinf(mg::TAU_F * freq * t);
+        float y = mg::biquadStep(c, st, x);
+        CHECK(std::isfinite(y) && fabsf(y) < 5.f);     // bounded and stable, never blows up
+        if (i >= n / 2) { inSq += (double)x * x; outSq += (double)y * y; }   // skip the startup transient
+      }
+      return sqrt(outSq / inSq);
+    };
+    CHECK(rmsAt(f0) < 0.1);           // the notch frequency itself is strongly attenuated
+    CHECK(rmsAt(200.f) > 0.85);       // well clear of the notch: passed through close to untouched
+  }
 }
 
 static void testGh() {
@@ -307,6 +361,7 @@ int main() {
   testWindows();
   testEngine();
   testConfig();
+  testFilt();
   testGh();
   if (failures) {
     printf("%d failure(s)\n", failures);

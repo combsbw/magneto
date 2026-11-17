@@ -9,6 +9,7 @@
 
 #include "coil.h"
 #include "fft.h"
+#include "filt.h"
 
 // ---- geometry of the pipeline ----------------------------------------------------------------------------------------
 static const uint32_t kAdcTry[] = {80000, 60000, 40000, 20000};  // total conversions/s across the 4-slot pattern
@@ -28,6 +29,12 @@ static Preferences sPrefs;
 static SenseCal sCal = {1.4f, 1.4f, 3.3f, true, 3950.f, 10.f, 10.f, false};
 static volatile bool sCalDirty = false;
 static SenseCal sCalPend;
+
+static SenseFilt sFilt = {0, false, 60, 0};
+static volatile bool sFiltDirty = false;
+static SenseFilt sFiltPend;
+static mg::Biquad sNotchCoef = {1.f, 0.f, 0.f, 0.f, 0.f};
+static mg::BiquadState sNotchSt[2];
 
 static int sGpio[4] = {1, 2, 3, 4};   // hallC, hallP, thC, thF
 static int sChan[4] = {0, 1, 2, 3};
@@ -80,6 +87,7 @@ static int sFftDecim = 0;
 static float sFftAcc = 0;
 static float sSpec[SPEC_MAX];
 static int sSpecN = 0;
+static int sSpecNPrev = 0;   // bin count last published; averaging resets if this changes
 static float sSpecDf = 0;
 static float sPkHz = 0, sPkAmp = 0, sPkSnr = 0;
 static float sProcHz = 0;                  // measured processed rate per hall channel
@@ -203,18 +211,19 @@ static inline void statsAndRings(float b0, float b1, int64_t tUs) {
     sRing[1][w] = b1;
     sRingW++;
   }
-  // dB/dt: difference over kDiffK processed samples, scaled to per-second, then 500 Hz smoothing
+  // dB/dt: difference over kDiffK processed samples, scaled to per-second, then smoothed (cutoff set
+  // by the filter strength; mode 0 is exactly the fixed 500 Hz this always used)
   float prev = sDbHist[sDbPos];
   sDbHist[sDbPos] = b0;
   sDbPos = (sDbPos + 1) % kDiffK;
   if (sProcIdx > (uint32_t)kDiffK && sProcHz > 1.f) {
     float d = (b0 - prev) * (sProcHz / (float)kDiffK) * 1e-3f;   // µT/s -> mT/s
-    float a = 1.f - expf(-6.2831853f * 500.f / sProcHz);
+    float a = mg::emaAlpha(mg::filtDbHz(sFilt.mode), sProcHz);
     sDbf += a * (d - sDbf);
     sDb = d;
   }
-  // display smoothing
-  float af = sProcHz > 1.f ? 1.f - expf(-6.2831853f * 300.f / sProcHz) : 1.f;
+  // display smoothing (mode 0 is exactly the fixed 300 Hz this always used)
+  float af = mg::emaAlpha(mg::filtFieldHz(sFilt.mode), sProcHz);
   sBf[0] += af * (b0 - sBf[0]);
   sBf[1] += af * (b1 - sBf[1]);
 
@@ -330,6 +339,13 @@ static void thermWindow(uint32_t now) {
   }
 }
 
+// Notch coefficients depend on the sample rate, which the task itself measures and refines once a
+// second (sProcHz below) - so this gets called both when the filter setting changes and whenever
+// that measurement updates, and is cheap enough (a handful of trig calls) to not matter at 1 Hz.
+static void recomputeNotch() {
+  sNotchCoef = sFilt.notch ? mg::notchCoeffs((float)sFilt.notchHz, sProcHz, 12.f) : mg::Biquad{1.f, 0.f, 0.f, 0.f, 0.f};
+}
+
 static void applyPendingCommands() {
   if (sCalDirty) {
     bool vccChanged = sCal.vcc != sCalPend.vcc || sCal.ratio != sCalPend.ratio;
@@ -338,6 +354,13 @@ static void applyPendingCommands() {
     if (vccChanged && !sZeroed[0]) sVz[0] = sCal.vcc * 0.5f;
     if (vccChanged && !sZeroed[1]) sVz[1] = sCal.vcc * 0.5f;
     sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
+  }
+  if (sFiltDirty) {
+    sFilt = sFiltPend;
+    sFiltDirty = false;
+    sNotchSt[0] = mg::BiquadState{};
+    sNotchSt[1] = mg::BiquadState{};
+    recomputeNotch();
   }
   uint8_t zc = sZeroClr;
   if (zc) {
@@ -430,6 +453,7 @@ static void senseTask(void*) {
       sumV[h] += volts;
       if (++nDec[h] >= kDecim) {
         float b = hallUt(h, (float)(sumV[h] / nDec[h]));
+        if (sFilt.notch) b = mg::biquadStep(sNotchCoef, sNotchSt[h], b);
         sumV[h] = 0;
         nDec[h] = 0;
         if (h == 0) {
@@ -453,6 +477,7 @@ static void senseTask(void*) {
       if (sRate[0] > 0) sProcHz = (float)sRate[0] * 1000.f / (float)(now - sRateT0) / (float)kDecim;
       sRate[0] = sRate[1] = sRate[2] = sRate[3] = 0;
       sRateT0 = now;
+      recomputeNotch();         // coefficients depend on sProcHz, which just moved
     }
     static uint32_t pubAt = 0;
     if (now - pubAt >= 50) { pubAt = now; publishSnap(); }
@@ -489,14 +514,22 @@ static void fftTask(void*) {
     int want = (int)(SPEC_HZ / df);
     if (want > bins) want = bins;
     int outN = want > SPEC_MAX ? SPEC_MAX : want;
+    // Spectrum averaging (specAvg) smooths frame to frame to pull a tone out of noise; peak detection
+    // above already ran on this frame's own raw magnitude, so it stays exactly as responsive as
+    // before regardless of this setting. A bin-count change (sProcHz drifted enough to move `want`)
+    // invalidates the previous frame's averaging state, so that one frame reseeds instead of blending.
+    bool reseed = outN != sSpecNPrev;
+    float alpha = mg::filtSpecAlpha(sFilt.specAvg);
     portENTER_CRITICAL(&sMux);
     for (int o = 0; o < outN; o++) {
       int a = (int)((int64_t)o * want / outN), b = (int)((int64_t)(o + 1) * want / outN);
       float m = 0;
       for (int i = a; i < b && i < bins; i++) if (re[i] > m) m = re[i];
-      sSpec[o] = 4.f * m / (float)N;      // amplitude-corrected like the peak
+      float nv = 4.f * m / (float)N;      // amplitude-corrected like the peak
+      sSpec[o] = (reseed || alpha >= 0.999f) ? nv : sSpec[o] + alpha * (nv - sSpec[o]);
     }
     sSpecN = outN;
+    sSpecNPrev = outN;
     sSpecDf = df * (float)want / (float)outN;
     if (got) { sPkHz = pk.hz; sPkAmp = pk.amp; sPkSnr = pk.snr; }
     else { sPkHz = 0; sPkAmp = 0; sPkSnr = 0; }
@@ -538,14 +571,26 @@ bool senseBegin(int hallC, int hallP, int thC, int thF) {
                 sPsram ? "PSRAM" : "internal RAM only", (unsigned)sRingCap, sFftN);
 
   if (!adcStart()) { /* the task keeps retrying */ }
-  xTaskCreatePinnedToCore(senseTask, "sense", 8192, nullptr, 4, &sTask, 0);
-  xTaskCreatePinnedToCore(fftTask, "fft", 6144, nullptr, 1, &sFftTask, 0);
+  // Core 0 is where the Wi-Fi/LWIP driver tasks live, at a priority well above anything application
+  // code should run at; a real-time ADC consumer sharing that core can be starved by radio traffic
+  // (exactly what the page's own HTTP polling generates) long enough to overflow the digi ADC's DMA
+  // ring. Both measurement tasks live on core 1 instead, alongside the HTTP/OTA loop and the LED
+  // task, where the only contention is cooperative FreeRTOS tasks at sane priorities. senseTask runs
+  // above ledTask (250 Hz, bounded per pass) so the sampler always wins; fftTask stays low priority -
+  // its 4096-point transform is bounded and infrequent (every 600 ms) and may wait behind either.
+  xTaskCreatePinnedToCore(senseTask, "sense", 8192, nullptr, 6, &sTask, 1);
+  xTaskCreatePinnedToCore(fftTask, "fft", 6144, nullptr, 1, &sFftTask, 1);
   return true;
 }
 
 void senseSetCal(const SenseCal& cal) {
   sCalPend = cal;
   sCalDirty = true;
+}
+
+void senseSetFilt(const SenseFilt& filt) {
+  sFiltPend = filt;
+  sFiltDirty = true;
 }
 
 void senseZero(int which) {

@@ -4,6 +4,7 @@
 // owns the schema; the firmware reads only the fields it acts on. Pure C++ for the host tests.
 #pragma once
 #include "engine.h"
+#include "filt.h"
 #include "json.h"
 
 namespace mg {
@@ -63,6 +64,16 @@ struct ThermCfg {
   bool top;       // true: NTC between 3V3 and the pin; false: NTC between the pin and GND
 };
 
+// Signal cleaning for the measurement pipeline (sense.cpp): display smoothing strength, an optional
+// mains-hum notch applied to both hall channels ahead of the ring/fold/FFT, and spectrum averaging.
+// mode 0 / notch off / specAvg 0 reproduces the firmware's pre-filtering behavior exactly.
+struct FiltCfg {
+  uint8_t mode;      // 0 raw, 1 light, 2 medium, 3 heavy (see filt.h filtFieldHz/filtDbHz)
+  bool notch;        // mains-hum notch enabled
+  uint8_t notchHz;   // 50 or 60
+  uint8_t specAvg;   // 0..4, spectrum frame-to-frame averaging (see filt.h filtSpecAlpha)
+};
+
 struct Config {
   Pins pins;
   Plan plan;
@@ -71,6 +82,7 @@ struct Config {
   LedCfg led;
   HallCfg hall;
   ThermCfg therm;
+  FiltCfg filt;
 
   void setDefaults() {
     pins = Pins{7, 1, 2, 3, 4, 5, 6, 8, 9, true, false};
@@ -82,6 +94,7 @@ struct Config {
     led = LedCfg{0, Rgb{80.f, 200.f, 255.f}, 80, 0, 70.f, 110.f, 100};
     hall = HallCfg{1.4f, 1.4f, 3.3f, true};
     therm = ThermCfg{3950.f, 10.f, 10.f, false};
+    filt = FiltCfg{0, false, 60, 0};
   }
 };
 
@@ -193,6 +206,14 @@ inline void cfgLeaf(void* vctx, const char* path, char type, double num, const c
     else if (!strcmp(k, "r0")) c.therm.r0k = clampf(f, 0.5f, 500.f);
     else if (!strcmp(k, "rs")) c.therm.rsk = clampf(f, 0.5f, 500.f);
     else if (!strcmp(k, "top")) c.therm.top = num != 0;
+    return;
+  }
+  if (strncmp(path, "filt.", 5) == 0) {
+    const char* k = path + 5;
+    if (!strcmp(k, "mode")) c.filt.mode = filtModeClamp(i);
+    else if (!strcmp(k, "notch")) c.filt.notch = num != 0;
+    else if (!strcmp(k, "notchHz")) c.filt.notchHz = i >= 55 ? 60 : 50;
+    else if (!strcmp(k, "specAvg")) c.filt.specAvg = specAvgClamp(i);
     return;
   }
 }
