@@ -11,6 +11,7 @@
 #include "coil.h"
 #include "fft.h"
 #include "filt.h"
+#include "sclock.h"
 
 // ---- geometry of the pipeline ----------------------------------------------------------------------------------------
 static const uint32_t kAdcTry[] = {80000, 60000, 40000, 20000};  // total conversions/s across the 4-slot pattern
@@ -20,7 +21,13 @@ static const int FOLD_N = 240;        // phase-profile bins
 static const int FFT_DECIM = 5;       // processed -> FFT stream (about 2 kHz at the 80 kHz ladder step)
 static const int SPEC_MAX = 256;
 static const float SPEC_HZ = 300.f;   // publish the spectrum up to here
-static const float ZERO_SEC = 0.25f;  // zeroing average, and the stats holdoff after any disturbance
+static const float HOLD_SEC = 0.25f;  // stats holdoff after any disturbance
+// Zero: half a second is a whole number of cycles of both 50 Hz (25) and 60 Hz (30) mains, so hum
+// averages out of the baseline instead of leaving a fraction of a cycle in it (0.25 s was 12.5
+// cycles of 50 Hz).
+static const float ZERO_SEC = 0.5f;
+static const uint32_t ZERO_TIMEOUT_MS = 5000;   // a zero that cannot find enough quiet samples gives up
+static const float LIVE_HZ = 200.f;   // live-stream buckets per second
 
 // ---- state (written by the sense task, read under the mux) ------------------------------------------------------------
 static portMUX_TYPE sMux = portMUX_INITIALIZER_UNLOCKED;
@@ -31,11 +38,13 @@ static SenseCal sCal = {1.4f, 1.4f, 3.3f, true, 3950.f, 10.f, 10.f, false};
 static volatile bool sCalDirty = false;
 static SenseCal sCalPend;
 
-static SenseFilt sFilt = {0, false, 60, 0};
+static SenseFilt sFilt = {0, false, 60, 0, 0.f, 0.f};
 static volatile bool sFiltDirty = false;
 static SenseFilt sFiltPend;
 static mg::Biquad sNotchCoef = {1.f, 0.f, 0.f, 0.f, 0.f};
 static mg::BiquadState sNotchSt[2];
+static mg::BandPass sBandCoef;
+static mg::BandState sBandSt[2];
 
 static int sGpio[4] = {1, 2, 3, 4};   // hallC, hallP, thC, thF
 static int sChan[4] = {0, 1, 2, 3};
@@ -46,44 +55,77 @@ static volatile bool sBounce = false;
 static float sLut[257];
 static mg::SenseWatch sWatch;
 
+// sample clock: processed-sample index -> esp_timer microseconds
+static mg::SampleClock sClk;
+static double sClkOff = 0, sClkTs = 100.0;    // published copy for the HTTP task, under sMux
+static bool sClkOk = false;
+
 // hall processing
 static float sVz[2] = {1.65f, 1.65f};
 static bool sZeroed[2] = {false, false};
-static volatile uint8_t sZeroArm = 0;      // bit 0 center, bit 1 perimeter
-static volatile uint8_t sZeroClr = 0;
+static volatile uint8_t sZeroReq = 0;      // API -> task: bit 0 center, bit 1 perimeter
+static volatile uint8_t sZeroClrReq = 0;
+static uint8_t sZeroBusy = 0;              // task-owned: channels collecting a zero
+static uint8_t sZeroFail = 0;
+static uint32_t sZeroSeq = 0;
 static double sZeroSum[2] = {0, 0};
 static uint32_t sZeroN[2] = {0, 0};
+static uint32_t sZeroAt[2] = {0, 0};
+static volatile uint8_t sPersist = 0;      // zeros to write to NVS (the FFT task does it, off the sampler)
+static uint8_t sPrime = 0;                 // reseed this channel's filters / smoothers on its next sample
 static volatile uint8_t sClearBits = 0;
 static uint32_t sHoldoff = 0;              // processed-sample index stats resume at
 static uint32_t sProcIdx = 0;
 
 static float sB[2] = {0, 0};               // latest processed field, µT
-static float sBf[2] = {0, 0};              // 300 Hz smoothed for the tiles
-static float sDb = 0, sDbf = 0;
-static float sDbHist[kDiffK] = {0};
+static float sBf[2] = {0, 0};              // display-smoothed for the tiles
+static float sBr[2] = {0, 0};              // unfiltered (no notch / band) smoothed, for the magnet watch
+static float sDb[2] = {0, 0}, sDbf[2] = {0, 0};
+static float sDbHist[2][kDiffK] = {{0}};
 static int sDbPos = 0;
-static float sBMax[2] = {0, 0}, sDbMax = 0;
+static float sBMax[2] = {0, 0}, sDbMax[2] = {0, 0};
 static double sAvgSum[2] = {0, 0}, sRmsSq = 0;
 static uint32_t sStatN = 0;
 static uint32_t sStatT0 = 0;
 static bool sClip = false;
 static uint32_t sClipAt = 0;
 
-// waveform rings (PSRAM when available)
+// waveform rings (PSRAM when available). Ring slot j holds processed sample j + 1.
 static float* sRing[2] = {nullptr, nullptr};
 static uint32_t sRingCap = 0;
 static volatile uint32_t sRingW = 0;       // one write index: both rings advance together
 
-// phase fold
-static float sFold[FOLD_N];
-static uint8_t sFoldHit[FOLD_N];
-static uint32_t sFoldPer = 0;
-static uint32_t sFoldCycles = 0;
-static uint32_t sFoldLastCycle = 0;
+// live stream: fixed-rate min/max buckets
+struct LiveB { float mn[4], mx[4]; };      // B center, B perimeter, dB/dt center, dB/dt perimeter
+static LiveB* sLive = nullptr;
+static uint32_t sLiveCap = 0;
+static volatile uint32_t sLiveW = 0;
+static int sLiveK = 50;                    // processed samples per bucket
+static int sLiveCnt = 0;
+static LiveB sLiveAcc;
+static float sLiveDtMs = 5.f;
+
+// phase fold, both channels, over a window around the rising edge
+static float sFold[2][FOLD_N];
+static uint16_t sFoldHit[FOLD_N];
+static uint32_t sFoldPer = 0, sFoldOn = 0;
+static float sFoldWin = 0, sFoldPre = 0;   // us folded, and how much of it is before the edge
+static uint32_t sFoldWinCur = 0;           // window the fold was armed with (0 = whole period)
+static volatile uint32_t sFoldWinReq = 0;  // what the page last asked for
+static uint32_t sFoldCyc0 = 0, sFoldCycNow = 0;
+static volatile bool sFoldReset = false;
+// per-block phase tracking against the coil's edges
+static CoilEdge sEdge;
+static bool sEdgeOk = false;
+static float sPh = 0;                      // phase of the next processed sample after the rising edge, us
+static float sTsF = 100.f;
+static int32_t sPhSkip = 0;                // samples still older than the current pulse train
+static bool sFoldLocked = false;
 
 // FFT stream and published spectrum
 static float* sFftRing = nullptr;
-static uint32_t sFftCap = 0, sFftW = 0;
+static uint32_t sFftCap = 0;
+static volatile uint32_t sFftW = 0;
 static int sFftN = 2048;        // transform size, set from the memory budget
 static bool sPsram = false;
 static int sFftDecim = 0;
@@ -92,6 +134,7 @@ static float sSpec[SPEC_MAX];
 static int sSpecN = 0;
 static int sSpecNPrev = 0;   // bin count last published; averaging resets if this changes
 static float sSpecDf = 0;
+static volatile bool sSpecReset = false;
 static float sPkHz = 0, sPkAmp = 0, sPkSnr = 0;
 static float sProcHz = 0;                  // nominal/filter rate per hall channel (kept > 0 while configured)
 static float sMeasHz = 0;                  // live measured rate per hall channel (0 when stalled)
@@ -145,8 +188,17 @@ static float thermF(int which, float volts, bool* ok) {
 }
 
 // ---- ADC bring-up -----------------------------------------------------------------------------------------------------
-static void recomputeNotch() {
+static void recomputeFilters() {
   sNotchCoef = sFilt.notch ? mg::notchCoeffs((float)sFilt.notchHz, sProcHz, 12.f) : mg::Biquad{1.f, 0.f, 0.f, 0.f, 0.f};
+  sBandCoef = mg::bandCoeffs(sFilt.hpHz, sFilt.lpHz, sProcHz);
+}
+
+static void liveSize() {
+  int k = (int)lroundf(sProcHz / LIVE_HZ);
+  if (k < 1) k = 1;
+  sLiveK = k;
+  sLiveCnt = 0;
+  sLiveDtMs = sProcHz > 1.f ? 1000.f * (float)k / sProcHz : 5.f;
 }
 
 // ESP-IDF 4.4's sar_periph_ctrl_power_enable() (called from Wi-Fi / PM / PHY paths) resets
@@ -166,6 +218,7 @@ static void adcStop() {
 
 static bool adcStart() {
   adcStop();
+  sClk.restart();
   esp_adc_cal_characteristics_t cal = {};
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &cal);
   for (int i = 0; i <= 256; i++) {
@@ -217,7 +270,9 @@ static bool adcStart() {
     sAdcUp = true;
     sProcHz = (float)hz / 4.f / (float)kDecim;   // refined by measurement every second
     sMeasHz = sProcHz;
-    recomputeNotch();
+    sClk.reset(1e6 / sProcHz);
+    recomputeFilters();
+    liveSize();
     Serial.printf("sense: ADC dma %u Hz total, ~%.0f Hz per hall channel\n", hz, sProcHz);
     return true;
   }
@@ -230,6 +285,7 @@ static bool adcStart() {
 // a flash-erase stall, and re-applies SAR power/clock settings after Wi-Fi PHY calibration.
 static bool adcBounce() {
   if (!sAdcUp) return adcStart();
+  sClk.restart();                         // samples were dropped: the index no longer maps to time
   adc_digi_stop();
   static uint8_t drain[512];
   uint32_t got = 0;
@@ -243,9 +299,79 @@ static bool adcBounce() {
   return true;
 }
 
+// ---- folding / zero helpers ---------------------------------------------------------------------------------------------
+static void foldArm() {
+  memset(sFold, 0, sizeof sFold);
+  memset(sFoldHit, 0, sizeof sFoldHit);
+  sFoldPer = sEdgeOk ? sEdge.perUs : 0;
+  sFoldOn = sEdgeOk ? sEdge.onUs : 0;
+  sFoldWinCur = sFoldWinReq;
+  float per = (float)sFoldPer;
+  if (sFoldWinCur > 0 && per > 0 && (float)sFoldWinCur < per) {
+    sFoldWin = (float)sFoldWinCur;
+    sFoldPre = sFoldWin * 0.1f;
+  } else {
+    sFoldWin = per;
+    sFoldPre = 0;
+  }
+  sFoldCyc0 = sEdgeOk ? sEdge.cycles : 0;
+  sFoldCycNow = sFoldCyc0;
+}
+
+// Once per DMA block: read the coil's edges, and work out the phase of the block's first sample.
+static void blockPhase() {
+  CoilEdge e;
+  // the fold needs the clock locked; zero gating only needs it valid (its guard band is milliseconds)
+  bool ok = coilEdge(&e) && sClk.valid && e.perUs > 0;
+  sFoldLocked = sClk.locked();
+  bool changed = ok != sEdgeOk || (ok && (e.perUs != sEdge.perUs || e.onUs != sEdge.onUs));
+  sEdgeOk = ok;
+  if (ok) sEdge = e;
+  if (changed || sFoldReset || sFoldWinReq != sFoldWinCur) { sFoldReset = false; foldArm(); }
+  if (!ok) { sFoldPer = 0; return; }
+  sFoldCycNow = e.cycles;
+  sTsF = (float)sClk.ts;
+  double t = sClk.at((double)(sProcIdx + 1));       // the next processed sample
+  double ph = fmod(t - (double)e.riseUs, (double)e.perUs);
+  if (ph < 0) ph += e.perUs;
+  sPh = (float)ph;
+  double before = (double)e.sinceUs - t;            // samples older than this pulse train don't fold
+  sPhSkip = before > 0 ? (int32_t)(before / sClk.ts) + 1 : 0;
+}
+
+// Is the sample at phase ph clear of the pulse and its decay (for zeroing with the coil running)?
+static inline bool quietPhase(float ph) {
+  if (!sEdgeOk) return !coilRunning();
+  float on = (float)sEdge.onUs, per = (float)sEdge.perUs;
+  float offT = per - on;
+  float guard = offT * 0.5f < 3000.f ? offT * 0.5f : 3000.f;
+  return ph >= on + guard;
+}
+
+// After a zero (or a zero clear) moves channel h's reference: nothing downstream may keep the old one.
+static void afterZero(uint8_t bits) {
+  sPrime |= bits;                                         // filters and smoothers reseed on the next sample
+  sHoldoff = sProcIdx + (uint32_t)(sProcHz * HOLD_SEC);
+  sClearBits |= SENSE_CLR_ALL;                            // stats measured against the old zero are void
+  sFoldReset = true;                                      // so is the folded pulse
+  sFftW = 0;                                              // and the FFT window (it restarts in ~2 s)
+  sSpecReset = true;
+  sZeroSeq++;
+}
+
 // ---- per-processed-sample work (runs ~10 kHz, keep it lean) -----------------------------------------------------------
-static inline void statsAndRings(float b0, float b1, int64_t tUs) {
+static inline void statsAndRings(float b0, float b1) {
   sProcIdx++;
+  // phase of this sample against the pulse train
+  bool phOk = sEdgeOk;
+  float ph = sPh;
+  if (sEdgeOk) {
+    if (sPhSkip > 0) { sPhSkip--; phOk = false; }
+    float per = (float)sEdge.perUs;
+    sPh += sTsF;
+    if (sPh >= per) sPh -= per;
+  }
+
   // scope rings
   if (sRing[0]) {
     uint32_t w = sRingW % sRingCap;
@@ -253,60 +379,78 @@ static inline void statsAndRings(float b0, float b1, int64_t tUs) {
     sRing[1][w] = b1;
     sRingW++;
   }
-  // dB/dt: difference over kDiffK processed samples, scaled to per-second, then smoothed (cutoff set
-  // by the filter strength; mode 0 is exactly the fixed 500 Hz this always used)
-  float prev = sDbHist[sDbPos];
-  sDbHist[sDbPos] = b0;
-  sDbPos = (sDbPos + 1) % kDiffK;
-  if (sProcIdx > (uint32_t)kDiffK && sProcHz > 1.f) {
-    float d = (b0 - prev) * (sProcHz / (float)kDiffK) * 1e-3f;   // µT/s -> mT/s
-    float a = mg::emaAlpha(mg::filtDbHz(sFilt.mode), sProcHz);
-    sDbf = mg::emaStep(sDbf, d, a);
-    sDb = d;
+  // dB/dt per channel: difference over kDiffK processed samples, scaled to per-second, then smoothed
+  // (cutoff set by the filter strength; mode 0 is exactly the fixed 500 Hz this always used)
+  const float bb[2] = {b0, b1};
+  float d[2] = {0, 0};
+  bool dOk = sProcIdx > (uint32_t)kDiffK && sProcHz > 1.f;
+  float aDb = mg::emaAlpha(mg::filtDbHz(sFilt.mode), sProcHz);
+  for (int h = 0; h < 2; h++) {
+    float prev = sDbHist[h][sDbPos];
+    sDbHist[h][sDbPos] = bb[h];
+    if (dOk) {
+      d[h] = (bb[h] - prev) * (sProcHz / (float)kDiffK) * 1e-3f;   // µT/s -> mT/s
+      sDbf[h] = mg::emaStep(sDbf[h], d[h], aDb);
+      sDb[h] = d[h];
+    }
   }
+  sDbPos = (sDbPos + 1) % kDiffK;
   // display smoothing (mode 0 is exactly the fixed 300 Hz this always used)
   float af = mg::emaAlpha(mg::filtFieldHz(sFilt.mode), sProcHz);
   sBf[0] = mg::emaStep(sBf[0], b0, af);
   sBf[1] = mg::emaStep(sBf[1], b1, af);
 
   // stats, held off briefly after a zero / pin / cal change so the step never latches as a peak
-  if (sProcIdx >= sHoldoff && isfinite(b0) && isfinite(b1) && isfinite(sDbf)) {
-    float a0 = fabsf(b0), a1 = fabsf(b1), ad = fabsf(sDbf);
+  if (sProcIdx >= sHoldoff && isfinite(b0) && isfinite(b1) && isfinite(sDbf[0]) && isfinite(sDbf[1])) {
+    float a0 = fabsf(b0), a1 = fabsf(b1), ad0 = fabsf(sDbf[0]), ad1 = fabsf(sDbf[1]);
     if (a0 > sBMax[0]) sBMax[0] = a0;
     if (a1 > sBMax[1]) sBMax[1] = a1;
-    if (ad > sDbMax) sDbMax = ad;
+    if (ad0 > sDbMax[0]) sDbMax[0] = ad0;
+    if (ad1 > sDbMax[1]) sDbMax[1] = ad1;
     sAvgSum[0] += b0;
     sAvgSum[1] += b1;
     sRmsSq += (double)b0 * (double)b0;
     sStatN++;
   }
 
-  // phase fold against the live pulse period
-  uint32_t per = coilPeriodUs();
-  if (per) {
-    if (per != sFoldPer || (per > sFoldPer ? per - sFoldPer : sFoldPer - per) > per / 100) {
-      // (re)arm on any period change worth 1 %
-      if (per != sFoldPer) {
-        memset(sFold, 0, sizeof sFold);
-        memset(sFoldHit, 0, sizeof sFoldHit);
-        sFoldPer = per;
-        sFoldCycles = 0;
-        sFoldLastCycle = coilCycles();
+  // live stream: min/max per bucket
+  if (sLive) {
+    const float v[4] = {b0, b1, d[0], d[1]};
+    if (sLiveCnt == 0) {
+      for (int k = 0; k < 4; k++) sLiveAcc.mn[k] = sLiveAcc.mx[k] = v[k];
+    } else {
+      for (int k = 0; k < 4; k++) {
+        if (v[k] < sLiveAcc.mn[k]) sLiveAcc.mn[k] = v[k];
+        if (v[k] > sLiveAcc.mx[k]) sLiveAcc.mx[k] = v[k];
       }
     }
-    int64_t ph = tUs - coilPeriodT0();
-    if (ph >= 0 && ph < (int64_t)per * 4) {
-      uint32_t p = (uint32_t)(ph % per);
-      int bin = (int)((uint64_t)p * FOLD_N / per);
+    if (++sLiveCnt >= sLiveK) {
+      sLive[sLiveW % sLiveCap] = sLiveAcc;
+      sLiveW++;
+      sLiveCnt = 0;
+    }
+  }
+
+  // phase fold against the coil's own edge times (equivalent-time sampling)
+  if (phOk && sFoldLocked && sFoldWin > 0) {
+    float fp = ph + sFoldPre;
+    float per = (float)sEdge.perUs;
+    if (fp >= per) fp -= per;
+    if (fp < sFoldWin) {
+      int bin = (int)(fp * (float)FOLD_N / sFoldWin);
       if (bin >= 0 && bin < FOLD_N) {
-        if (sFoldHit[bin] < 8) { sFoldHit[bin]++; sFold[bin] += (b0 - sFold[bin]) / sFoldHit[bin]; }
-        else sFold[bin] += 0.06f * (b0 - sFold[bin]);
+        uint16_t n = sFoldHit[bin];
+        if (n < 32) {
+          n++;
+          sFoldHit[bin] = n;
+          sFold[0][bin] += (b0 - sFold[0][bin]) / (float)n;
+          sFold[1][bin] += (b1 - sFold[1][bin]) / (float)n;
+        } else {
+          sFold[0][bin] += (b0 - sFold[0][bin]) * (1.f / 32.f);
+          sFold[1][bin] += (b1 - sFold[1][bin]) * (1.f / 32.f);
+        }
       }
     }
-    uint32_t cyc = coilCycles();
-    if (cyc != sFoldLastCycle) { sFoldCycles += cyc - sFoldLastCycle; sFoldLastCycle = cyc; }
-  } else if (sFoldPer) {
-    sFoldPer = 0;
   }
 
   // FFT stream: box-decimate the center field
@@ -314,7 +458,7 @@ static inline void statsAndRings(float b0, float b1, int64_t tUs) {
   if (++sFftDecim >= FFT_DECIM) {
     if (sFftRing) {
       sFftRing[sFftW % sFftCap] = sFftAcc / (float)FFT_DECIM;
-      sFftW++;
+      sFftW = sFftW + 1;
     }
     sFftAcc = 0;
     sFftDecim = 0;
@@ -325,22 +469,27 @@ static void publishSnap() {
   uint32_t now = millis();
   SenseSnap s;
   s.b0 = sBf[0]; s.b1 = sBf[1];
-  s.db = sDbf;
-  s.bMax0 = sBMax[0]; s.bMax1 = sBMax[1]; s.dbMax = sDbMax;
+  s.db = sDbf[0]; s.db1 = sDbf[1];
+  s.bMax0 = sBMax[0]; s.bMax1 = sBMax[1]; s.dbMax = sDbMax[0]; s.dbMax1 = sDbMax[1];
   s.bAvg0 = sStatN ? (float)(sAvgSum[0] / sStatN) : 0;
   s.bAvg1 = sStatN ? (float)(sAvgSum[1] / sStatN) : 0;
   s.bRms0 = sStatN ? (float)sqrt(sRmsSq / sStatN) : 0;
   s.statSec = (now - sStatT0) / 1000.f;
-  s.v0 = sVz[0] + sBf[0] / 100.f * sensVperG(0);
-  s.v1 = sVz[1] + sBf[1] / 100.f * sensVperG(1);
+  s.br0 = sBr[0]; s.br1 = sBr[1];
+  s.v0 = sVz[0] + sBr[0] / 100.f * sensVperG(0);
+  s.v1 = sVz[1] + sBr[1] / 100.f * sensVperG(1);
   s.zeroed0 = sZeroed[0]; s.zeroed1 = sZeroed[1];
+  s.zBusy = sZeroBusy | sZeroReq;
+  s.zFail = sZeroFail;
+  s.zSeq = sZeroSeq;
   s.clip = sClip && (uint32_t)(now - sClipAt) < 200;
   s.fs = sWatch.stalled(now) ? 0.f : sMeasHz;
+  s.clk = sClk.locked();
   s.tC = sTempF[0]; s.tF = sTempF[1];
   s.dtdtC = sDtdt[0]; s.dtdtF = sDtdt[1];
   s.okC = sThOk[0]; s.okF = sThOk[1];
-  s.pkHz = sPkHz; s.pkAmp = sPkAmp; s.pkSnr = sPkSnr;
   portENTER_CRITICAL(&sMux);
+  s.pkHz = sPkHz; s.pkAmp = sPkAmp; s.pkSnr = sPkSnr;
   uint32_t seq = sSnap.seq + 1;
   sSnap = s;
   sSnap.seq = seq;
@@ -391,34 +540,100 @@ static void applyPendingCommands() {
     sCalDirty = false;
     if (vccChanged && !sZeroed[0]) sVz[0] = sCal.vcc * 0.5f;
     if (vccChanged && !sZeroed[1]) sVz[1] = sCal.vcc * 0.5f;
-    sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
+    sHoldoff = sProcIdx + (uint32_t)(sProcHz * HOLD_SEC);
   }
   if (sFiltDirty) {
     sFilt = sFiltPend;
     sFiltDirty = false;
-    sNotchSt[0] = mg::BiquadState{};
-    sNotchSt[1] = mg::BiquadState{};
-    recomputeNotch();
+    recomputeFilters();
+    sPrime |= 3;                       // new filters start from the signal as it is, not from zero
+    sHoldoff = sProcIdx + (uint32_t)(sProcHz * HOLD_SEC);
+    sFoldReset = true;
   }
-  uint8_t zc = sZeroClr;
+  // zero requests: start collecting (the sums are reset here, in the task that owns them)
+  portENTER_CRITICAL(&sMux);
+  uint8_t zr = sZeroReq;
+  sZeroReq = 0;
+  uint8_t zc = sZeroClrReq;
+  sZeroClrReq = 0;
+  portEXIT_CRITICAL(&sMux);
+  uint32_t ms = millis();
+  for (int i = 0; i < 2; i++) {
+    if (!(zr & (1 << i))) continue;
+    sZeroSum[i] = 0;
+    sZeroN[i] = 0;
+    sZeroAt[i] = ms;
+    sZeroBusy |= (uint8_t)(1 << i);
+    sZeroFail &= (uint8_t)~(1 << i);
+  }
   if (zc) {
-    sZeroClr = 0;
     for (int i = 0; i < 2; i++) {
       if (!(zc & (1 << i))) continue;
       sVz[i] = sCal.vcc * 0.5f;
       sZeroed[i] = false;
-      sPrefs.putFloat(i ? "vz1" : "vz0", sVz[i]);
-      sPrefs.putBool(i ? "z1" : "z0", false);
+      sZeroBusy &= (uint8_t)~(1 << i);
+      sZeroFail &= (uint8_t)~(1 << i);
     }
-    sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
-    sBounce = true;
+    sPersist |= zc;
+    afterZero(zc);
   }
+  // a zero that could not find its quiet samples in time gives up rather than hang
+  for (int i = 0; i < 2; i++) {
+    if (!(sZeroBusy & (1 << i)) || (uint32_t)(ms - sZeroAt[i]) < ZERO_TIMEOUT_MS) continue;
+    sZeroBusy &= (uint8_t)~(1 << i);
+    sZeroFail |= (uint8_t)(1 << i);
+    sZeroSeq++;
+  }
+  portENTER_CRITICAL(&sMux);
   uint8_t clr = sClearBits;
+  sClearBits = 0;
+  portEXIT_CRITICAL(&sMux);
   if (clr) {
-    sClearBits = 0;
-    if (clr & SENSE_CLR_MAX) { sBMax[0] = sBMax[1] = sDbMax = 0; }
+    if (clr & SENSE_CLR_MAX) { sBMax[0] = sBMax[1] = 0; sDbMax[0] = sDbMax[1] = 0; }
     if (clr & SENSE_CLR_AVG) { sAvgSum[0] = sAvgSum[1] = 0; sRmsSq = 0; sStatN = 0; sStatT0 = millis(); }
+    if (clr == SENSE_CLR_ALL) { sFoldReset = true; sSpecReset = true; }
+    publishSnap();                     // the command's reply reads this, not a 50 ms-old snapshot
   }
+}
+
+// One hall channel's decimated sample: zero collection on the raw volts, then volts -> µT, then the
+// signal-cleaning chain, with the per-channel reseed after a zero or a filter change.
+static inline float hallSample(int h, float volts, float ph, bool phOk) {
+  if (sZeroBusy & (1 << h)) {
+    bool quiet = coilRunning() ? (phOk && quietPhase(ph)) : true;
+    if (quiet) {
+      sZeroSum[h] += volts;
+      sZeroN[h]++;
+    }
+    uint32_t need = (uint32_t)(sProcHz * ZERO_SEC);
+    if (need < 16) need = 16;
+    if (sZeroN[h] >= need) {
+      sVz[h] = (float)(sZeroSum[h] / sZeroN[h]);
+      sZeroed[h] = true;
+      sZeroBusy &= (uint8_t)~(1 << h);
+      sPersist |= (uint8_t)(1 << h);
+      afterZero((uint8_t)(1 << h));
+    }
+  }
+  float raw = hallUt(h, volts);
+  float b = raw;
+  if (sPrime & (1 << h)) {
+    mg::biquadPrime(sNotchSt[h], raw);
+    sBandSt[h].primed = false;
+  }
+  if (sFilt.notch) b = mg::biquadStep(sNotchCoef, sNotchSt[h], b);
+  b = mg::bandStep(sBandCoef, sBandSt[h], b);
+  float af = mg::emaAlpha(mg::filtFieldHz(0), sProcHz);
+  if (sPrime & (1 << h)) {
+    sPrime &= (uint8_t)~(1 << h);
+    sBr[h] = raw;
+    sBf[h] = b;
+    for (int k = 0; k < kDiffK; k++) sDbHist[h][k] = b;   // no dB/dt spike from the old reference
+    sDbf[h] = 0;
+  } else {
+    sBr[h] = mg::emaStep(sBr[h], raw, af);
+  }
+  return b;
 }
 
 static void senseTask(void*) {
@@ -482,14 +697,10 @@ static void senseTask(void*) {
 
     if (haveData) {
       int64_t tEnd = esp_timer_get_time();
-      // samples in this block per hall channel, for per-sample time reconstruction in the fold
-      int hallInBlock = 0;
-      for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
-        const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
-        if (p->type2.channel == (uint32_t)sChan[0]) hallInBlock++;
-      }
-      int hallSeen = 0;
+      blockPhase();
       int validSamples = 0;
+      float lastPh = sPh;
+      bool lastPhOk = sEdgeOk && sPhSkip <= 0;
 
       for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
         const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
@@ -512,42 +723,30 @@ static void senseTask(void*) {
         // hall channel
         if (raw <= 1 || raw >= 4094) clipRun = true;
         int h = slot;
-        if (h == 0) hallSeen++;
-        if (sZeroArm & (1 << h)) {
-          sZeroSum[h] += volts;
-          sZeroN[h]++;
-          uint32_t need = (uint32_t)(sProcHz * kDecim * ZERO_SEC);
-          if (need < 16) need = 16;
-          if (sZeroN[h] >= need) {
-            sVz[h] = (float)(sZeroSum[h] / sZeroN[h]);
-            sZeroed[h] = true;
-            sZeroArm &= ~(1 << h);
-            sPrefs.putFloat(h ? "vz1" : "vz0", sVz[h]);
-            sPrefs.putBool(h ? "z1" : "z0", true);
-            sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
-            sBounce = true;
-          }
-        }
         sumV[h] += volts;
         if (++nDec[h] >= kDecim) {
-          float b = hallUt(h, (float)(sumV[h] / nDec[h]));
-          if (sFilt.notch) b = mg::biquadStep(sNotchCoef, sNotchSt[h], b);
+          float v = (float)(sumV[h] / nDec[h]);
           sumV[h] = 0;
           nDec[h] = 0;
           if (h == 0) {
-            sB[0] = b;
-            // reconstruct this sample's time from its place in the block
-            int64_t tS = tEnd;
-            if (sProcHz > 1.f && hallInBlock > 0) {
-              tS -= (int64_t)((double)(hallInBlock - hallSeen) / (sProcHz * kDecim) * 1e6);
-            }
-            statsAndRings(sB[0], sB[1], tS);
+            lastPh = sPh;                                  // the phase this center sample is about to take
+            lastPhOk = sEdgeOk && sPhSkip <= 0;
+            sB[0] = hallSample(0, v, lastPh, lastPhOk);
+            statsAndRings(sB[0], sB[1]);
           } else {
-            sB[1] = b;
+            sB[1] = hallSample(1, v, lastPh, lastPhOk);   // the perimeter sample sits next to it
           }
         }
       }
-      if (validSamples > 0) sWatch.onData(millis());
+      if (validSamples > 0) {
+        sWatch.onData(millis());
+        sClk.onBlock((double)sProcIdx, (double)tEnd);
+        portENTER_CRITICAL(&sMux);
+        sClkOff = sClk.off;
+        sClkTs = sClk.ts;
+        sClkOk = sClk.locked();
+        portEXIT_CRITICAL(&sMux);
+      }
       if (clipRun) { sClip = true; sClipAt = millis(); clipRun = false; }
     } else if (err != ESP_ERR_TIMEOUT) {
       mg::SenseAct act = sWatch.onReadErr(millis());
@@ -570,7 +769,8 @@ static void senseTask(void*) {
       sMeasHz = dtMs > 0.f ? (float)sRate[0] * 1000.f / dtMs / (float)kDecim : 0.f;
       if (sRate[0] > 0) {
         sProcHz = sMeasHz;
-        recomputeNotch();       // coefficients depend on sProcHz, which just moved
+        recomputeFilters();     // coefficients depend on sProcHz, which just moved
+        sLiveDtMs = 1000.f * (float)sLiveK / sProcHz;
       }
       sRate[0] = sRate[1] = sRate[2] = sRate[3] = 0;
       sRateT0 = now;
@@ -580,21 +780,38 @@ static void senseTask(void*) {
   }
 }
 
-// ---- FFT task ---------------------------------------------------------------------------------------------------------
+// ---- FFT task (also writes zeros to NVS: a flash write must never sit inside the sampler) -------------------------
+static void persistZeros() {
+  portENTER_CRITICAL(&sMux);
+  uint8_t bits = sPersist;
+  sPersist = 0;
+  float vz[2] = {sVz[0], sVz[1]};
+  bool z[2] = {sZeroed[0], sZeroed[1]};
+  portEXIT_CRITICAL(&sMux);
+  for (int i = 0; i < 2; i++) {
+    if (!(bits & (1 << i))) continue;
+    sPrefs.putFloat(i ? "vz1" : "vz0", vz[i]);
+    sPrefs.putBool(i ? "z1" : "z0", z[i]);
+  }
+  if (bits) senseBounce();      // the flash write may have stalled the DMA ring; re-arm it cleanly
+}
+
 static void fftTask(void*) {
   const int N = sFftN;
   float* re = (float*)heap_caps_malloc(N * sizeof(float), MALLOC_CAP_SPIRAM);
   float* im = (float*)heap_caps_malloc(N * sizeof(float), MALLOC_CAP_SPIRAM);
   if (!re) re = (float*)malloc(N * sizeof(float));
   if (!im) im = (float*)malloc(N * sizeof(float));
-  if (!re || !im || !sFftRing) { Serial.println("sense: no memory for the FFT"); vTaskDelete(nullptr); return; }
+  bool fftOk = re && im && sFftRing;
+  if (!fftOk) Serial.println("sense: no memory for the FFT");
   for (;;) {
-    vTaskDelay(pdMS_TO_TICKS(600));
-    if (sHold) continue;
+    vTaskDelay(pdMS_TO_TICKS(fftOk ? 600 : 300));
+    if (sPersist && !sHold) persistZeros();
+    if (sHold || !fftOk) continue;
     uint32_t w = sFftW;
     if (w < (uint32_t)N) continue;
     for (int i = 0; i < N; i++) re[i] = sFftRing[(w - N + i) % sFftCap];
-    if (sFftW - w > sFftCap - N) continue;      // lapped while copying; try again next pass
+    if (sFftW < w || sFftW - w > sFftCap - N) continue;      // reset or lapped while copying; try again
     memset(im, 0, N * sizeof(float));
     float fs = sProcHz / (float)FFT_DECIM;
     if (fs < 10.f) continue;
@@ -613,8 +830,9 @@ static void fftTask(void*) {
     // Spectrum averaging (specAvg) smooths frame to frame to pull a tone out of noise; peak detection
     // above already ran on this frame's own raw magnitude, so it stays exactly as responsive as
     // before regardless of this setting. A bin-count change (sProcHz drifted enough to move `want`)
-    // invalidates the previous frame's averaging state, so that one frame reseeds instead of blending.
-    bool reseed = outN != sSpecNPrev;
+    // or a reset (zero, clear all) invalidates the previous frame's averaging, so this frame reseeds.
+    bool reseed = outN != sSpecNPrev || sSpecReset;
+    sSpecReset = false;
     float alpha = mg::filtSpecAlpha(sFilt.specAvg);
     portENTER_CRITICAL(&sMux);
     for (int o = 0; o < outN; o++) {
@@ -653,8 +871,8 @@ bool senseBegin(int hallC, int hallP, int thC, int thF) {
   }
 
   // Buffer budget. With PSRAM the scope keeps minutes of history and the FFT runs 4096 points.
-  // Without it every byte competes with Wi-Fi and the TLS server in internal RAM, so the rings
-  // shrink hard and the transform drops to 2048 points (still ~1 Hz resolution over a 1 s window).
+  // Without it every byte competes with Wi-Fi in internal RAM, so the rings shrink hard and the
+  // transform drops to 2048 points (still ~1 Hz resolution over a 1 s window).
   sRing[0] = sRing[1] = nullptr;
   sRingCap = 65536;
   for (int i = 0; i < 2; i++) sRing[i] = (float*)heap_caps_malloc(sRingCap * sizeof(float), MALLOC_CAP_SPIRAM);
@@ -668,9 +886,14 @@ bool senseBegin(int hallC, int hallP, int thC, int thF) {
   sFftCap = sPsram ? 8192 : 2048;
   sFftRing = (float*)heap_caps_malloc(sFftCap * sizeof(float), MALLOC_CAP_SPIRAM);
   if (!sFftRing) sFftRing = (float*)malloc(sFftCap * sizeof(float));
+  // live stream: ~5 s of buckets with PSRAM, ~1.3 s without (the page asks every few hundred ms)
+  sLiveCap = sPsram ? 1024 : 256;
+  sLive = (LiveB*)heap_caps_malloc(sLiveCap * sizeof(LiveB), MALLOC_CAP_SPIRAM);
+  if (!sLive) sLive = (LiveB*)malloc(sLiveCap * sizeof(LiveB));
+  if (!sLive) sLiveCap = 0;
   memset(sFold, 0, sizeof sFold);
-  Serial.printf("sense: %s - scope %u samples/channel, FFT %d points\n",
-                sPsram ? "PSRAM" : "internal RAM only", (unsigned)sRingCap, sFftN);
+  Serial.printf("sense: %s - scope %u samples/channel, FFT %d points, live %u buckets\n",
+                sPsram ? "PSRAM" : "internal RAM only", (unsigned)sRingCap, sFftN, (unsigned)sLiveCap);
 
   if (!adcStart()) { /* the task keeps retrying */ }
   // Core 0 is where the Wi-Fi/LWIP driver tasks live, at a priority well above anything application
@@ -697,16 +920,31 @@ void senseSetFilt(const SenseFilt& filt) {
 
 void senseZero(int which) {
   uint8_t bits = which == 2 ? 3 : (1 << (which & 1));
-  for (int i = 0; i < 2; i++) {
-    if (!(bits & (1 << i))) continue;
-    sZeroSum[i] = 0;
-    sZeroN[i] = 0;
-  }
-  sZeroArm |= bits;
+  portENTER_CRITICAL(&sMux);
+  sZeroReq |= bits;
+  portEXIT_CRITICAL(&sMux);
 }
 
-void senseZeroClear(int which) { sZeroClr |= which == 2 ? 3 : (1 << (which & 1)); }
-void senseClearStats(uint8_t bits) { sClearBits |= bits; }
+void senseZeroClear(int which) {
+  uint8_t bits = which == 2 ? 3 : (1 << (which & 1));
+  portENTER_CRITICAL(&sMux);
+  sZeroClrReq |= bits;
+  portEXIT_CRITICAL(&sMux);
+  if (!sTask || sHold) return;
+  uint32_t t0 = millis();
+  while (sZeroClrReq && (uint32_t)(millis() - t0) < 150) vTaskDelay(1);
+  t0 = millis();
+  while ((sClearBits || sPrime) && (uint32_t)(millis() - t0) < 150) vTaskDelay(1);
+}
+
+void senseClearStats(uint8_t bits) {
+  portENTER_CRITICAL(&sMux);
+  sClearBits |= bits;
+  portEXIT_CRITICAL(&sMux);
+  if (!sTask || sHold) return;
+  uint32_t t0 = millis();
+  while (sClearBits && (uint32_t)(millis() - t0) < 150) vTaskDelay(1);
+}
 
 void senseCopy(SenseSnap& out) {
   portENTER_CRITICAL(&sMux);
@@ -714,40 +952,70 @@ void senseCopy(SenseSnap& out) {
   portEXIT_CRITICAL(&sMux);
 }
 
-int senseWave(int ch, uint32_t spanMs, int maxBins, float* mn, float* mx, float* fsOut) {
+static inline float ringDb(int h, uint32_t j) {
+  uint32_t k = j >= (uint32_t)kDiffK ? j - kDiffK : 0;
+  return (sRing[h][j % sRingCap] - sRing[h][k % sRingCap]) * (sProcHz / (float)kDiffK) * 1e-3f;
+}
+
+int senseWave(int ch, uint32_t spanUs, bool trig, int maxBins, float* mn, float* mx, float* fsOut,
+              float* x0Us, float* dxUs, bool* trigOk) {
+  if (trigOk) *trigOk = false;
   if (!sRing[0] || sProcHz < 1.f) return 0;
+  if (ch < 0 || ch > 3) ch = 0;
   if (fsOut) *fsOut = sProcHz;
+  portENTER_CRITICAL(&sMux);
+  double off = sClkOff, ts = sClkTs;
+  bool clk = sClkOk;
+  portEXIT_CRITICAL(&sMux);
+  if (!(ts > 0)) ts = 1e6 / sProcHz;
   uint32_t w = sRingW;
-  uint32_t nS = (uint32_t)((double)spanMs * sProcHz / 1000.0);
-  if (nS < 8) nS = 8;
-  if (nS > sRingCap) nS = sRingCap;
+  uint32_t nS = (uint32_t)((double)spanUs / ts + 0.5);
+  if (nS < 4) nS = 4;
+  uint32_t keep = sRingCap > 64 ? sRingCap - 64 : sRingCap;   // the writer may be overwriting the oldest
+  if (nS > keep) nS = keep;
   if (nS > w) nS = w;
-  if (nS < 8) return 0;
-  int bins = (int)nS < maxBins ? (int)nS : maxBins;
-  const float* src = ch == 1 ? sRing[1] : sRing[0];
+  if (nS < 4) return 0;
   uint32_t start = w - nS;
+  double x0 = -(double)nS * ts;
+
+  // Triggered: line the window up on the latest rising edge whose post-trigger part is all in.
+  CoilEdge e;
+  if (trig && clk && coilEdge(&e) && e.perUs > 0) {
+    double tNew = off + (double)w * ts;              // ring slot w-1 holds processed sample w
+    double span = (double)nS * ts, pre = span * 0.1;
+    double latest = tNew - (span - pre);
+    double edge = (double)e.riseUs;
+    if (edge > latest) {
+      double k = ceil((edge - latest) / (double)e.perUs);
+      edge -= k * (double)e.perUs;
+    }
+    if (edge >= (double)e.sinceUs) {
+      double idx = (edge - pre - off) / ts - 1.0;    // ring slot of the first sample
+      double lowest = w > keep ? (double)(w - keep) : 0.0;
+      if (idx >= lowest && idx + nS <= (double)w) {
+        start = (uint32_t)floor(idx);
+        x0 = off + ((double)start + 1.0) * ts - edge;
+        if (trigOk) *trigOk = true;
+      }
+    }
+  }
+
+  int bins = (int)nS < maxBins ? (int)nS : maxBins;
   for (int o = 0; o < bins; o++) {
     uint32_t a = start + (uint32_t)((uint64_t)o * nS / bins);
     uint32_t b = start + (uint32_t)((uint64_t)(o + 1) * nS / bins);
     if (b <= a) b = a + 1;
     float lo = 1e30f, hi = -1e30f;
-    if (ch == 2) {                              // dB/dt rebuilt from the center ring
-      for (uint32_t i = a; i < b; i++) {
-        uint32_t j = i >= (uint32_t)kDiffK ? i - kDiffK : 0;
-        float d = (sRing[0][i % sRingCap] - sRing[0][j % sRingCap]) * (sProcHz / (float)kDiffK) * 1e-3f;
-        if (d < lo) lo = d;
-        if (d > hi) hi = d;
-      }
-    } else {
-      for (uint32_t i = a; i < b; i++) {
-        float v = src[i % sRingCap];
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-      }
+    for (uint32_t i = a; i < b; i++) {
+      float v = ch >= 2 ? ringDb(ch - 2, i) : sRing[ch][i % sRingCap];
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
     }
     mn[o] = lo;
     mx[o] = hi;
   }
+  if (x0Us) *x0Us = (float)x0;
+  if (dxUs) *dxUs = (float)((double)nS * ts / bins);
   return bins;
 }
 
@@ -760,13 +1028,42 @@ int senseSpec(float* out, int maxBins, float* dfOut) {
   return n;
 }
 
-int senseFold(float* out, int maxBins, uint32_t* perUs, uint32_t* cycles) {
-  if (!sFoldPer) return 0;
+int senseFold(uint32_t winUs, float* c, float* p, int maxBins, uint32_t* perUs, uint32_t* onUs,
+              uint32_t* cycles, float* winOut, float* preOut, int* filled) {
+  if (winUs > 20000000) winUs = 20000000;
+  sFoldWinReq = winUs;                   // the sampler re-arms the fold when this changes
+  if (!sFoldPer || sFoldWinCur != winUs || !(sFoldWin > 0)) return 0;
   int n = FOLD_N < maxBins ? FOLD_N : maxBins;
-  for (int i = 0; i < n; i++) out[i] = sFold[(int)((int64_t)i * FOLD_N / n)];
+  int got = 0;
+  for (int i = 0; i < n; i++) {
+    int k = (int)((int64_t)i * FOLD_N / n);
+    if (sFoldHit[k]) { c[i] = sFold[0][k]; p[i] = sFold[1][k]; got++; }
+    else { c[i] = NAN; p[i] = NAN; }
+  }
   if (perUs) *perUs = sFoldPer;
-  if (cycles) *cycles = sFoldCycles;
+  if (onUs) *onUs = sFoldOn;
+  if (cycles) *cycles = sFoldCycNow - sFoldCyc0;
+  if (winOut) *winOut = sFoldWin;
+  if (preOut) *preOut = sFoldPre;
+  if (filled) *filled = got;
   return n;
+}
+
+int senseLive(uint32_t from, int maxN, float* out, uint32_t* start, float* dtMs) {
+  if (dtMs) *dtMs = sLiveDtMs;
+  if (!sLive || maxN <= 0) { if (start) *start = sLiveW; return 0; }
+  uint32_t w = sLiveW;
+  uint32_t avail = w < sLiveCap - 8 ? w : sLiveCap - 8;    // the oldest few may be mid-overwrite
+  if (from == 0 || from > w || w - from > avail) from = w - (avail < (uint32_t)maxN ? avail : (uint32_t)maxN);
+  uint32_t n = w - from;
+  if (n > (uint32_t)maxN) n = (uint32_t)maxN;
+  for (uint32_t i = 0; i < n; i++) {
+    const LiveB& b = sLive[(from + i) % sLiveCap];
+    float* o = out + i * 8;
+    for (int k = 0; k < 4; k++) { o[k * 2] = b.mn[k]; o[k * 2 + 1] = b.mx[k]; }
+  }
+  if (start) *start = from;
+  return (int)n;
 }
 
 bool sensePsram() { return sPsram; }

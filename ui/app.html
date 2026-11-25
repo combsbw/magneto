@@ -6,12 +6,15 @@
   --line:#dbe1e9; --line2:#ccd4df; --acc:#3f72c4; --acc2:#2f9c86; --warn:#b67817; --bad:#b4342e;
   --good:#2e8f55; --chipbg:#eaeef4; --thumb:#ffffff; --tile:#f2f5f9; --shadow:0 1px 3px rgba(20,30,50,.08);
   --accsoft:rgba(63,114,196,.12); --badsoft:rgba(180,52,46,.1); --warnsoft:rgba(182,120,23,.12);
+  /* chart series: B center / B perimeter / B center at depth / B perimeter at depth, then the same four for dB/dt */
+  --s1:#3f72c4; --s2:#2f9c86; --s3:#7b5cc4; --s4:#5f8f2a; --s5:#c07a10; --s6:#b4342e; --s7:#c2508f; --s8:#5e6b7e;
 }
 html[data-th="dark"]{
   --bg:#0e1116; --bg2:#12161d; --card:#161b23; --card2:#1b2129; --ink:#e7edf5; --mut:#8d99aa;
   --line:#242c38; --line2:#2e3846; --acc:#6ea8ff; --acc2:#49e0b8; --warn:#e8b45a; --bad:#ff7a6e;
   --good:#5fd08a; --chipbg:#1d242e; --thumb:#2a3340; --tile:#1a2029; --shadow:0 1px 3px rgba(0,0,0,.35);
   --accsoft:rgba(110,168,255,.14); --badsoft:rgba(255,122,110,.12); --warnsoft:rgba(232,180,90,.13);
+  --s1:#6ea8ff; --s2:#49e0b8; --s3:#b49cff; --s4:#9ad66b; --s5:#e8b45a; --s6:#ff7a6e; --s7:#f08cc8; --s8:#a9b4c4;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink)}
@@ -159,6 +162,13 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--line);border-rad
 .vs .t{font-size:12.5px;color:var(--mut);font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
 .vs .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin:3px 0 1px}
 .vs .val small{font-size:12px;color:var(--mut);font-weight:500}
+/* the value itself is a text field: tap it and type a number (Enter or leaving the field applies it) */
+.vs .val .valin{width:4.4em;font:inherit;font-variant-numeric:tabular-nums;text-align:center;color:inherit;
+  background:transparent;border:1px dashed var(--line2);border-radius:8px;padding:0 3px;margin:0;
+  -webkit-user-select:text;user-select:text;outline:none}
+.vs .val .valin:focus{background:var(--card2);border:1px solid var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
+.vs .val .valin.bad{border-color:var(--bad);box-shadow:0 0 0 3px var(--badsoft)}
+.vs.locked .val .valin{border-color:transparent}
 .vs .duty{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
 .vtrack{position:relative;height:238px;width:66px;margin:10px auto 8px;border-radius:14px;background:var(--line2);
   touch-action:none;cursor:pointer;box-shadow:inset 0 2px 6px rgba(10,18,32,.28),inset 0 -1px 0 rgba(255,255,255,.18)}
@@ -238,7 +248,18 @@ html[data-th="dark"] .vtrack{box-shadow:inset 0 2px 7px rgba(0,0,0,.55),inset 0 
 .ch canvas{display:block;width:100%;height:100%}
 .ch .cap{position:absolute;left:8px;top:6px;font-size:11px;color:var(--mut);pointer-events:none;
   font-variant-numeric:tabular-nums}
-.ch.h160{height:160px}.ch.h200{height:200px}.ch.h240{height:240px}
+.ch.h160{height:160px}.ch.h200{height:200px}.ch.h240{height:240px}.ch.h300{height:300px}
+/* realtime chart: series toggles carry their own color swatch, the legend IS the control */
+.lg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+.lg button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--chipbg);
+  color:var(--mut);border-radius:99px;padding:4px 10px 4px 8px;font-size:12px;cursor:pointer}
+.lg button i{width:14px;height:3px;border-radius:2px;flex:none}
+.lg button i.dash{background:none!important;border-top:2px dashed currentColor;height:0}
+.lg button.on{color:var(--ink);border-color:var(--line2);background:var(--card)}
+.lg button:not(.on) i{opacity:.35}
+.zoom{display:inline-flex;align-items:center;gap:4px}
+.zoom select.txt{flex:none;width:auto;padding:5px 8px;font-size:12.5px}
+.zoom .btn.sm{min-width:30px;padding:5px 8px}
 .chbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}
 .chbar .sp{flex:1}
 
@@ -320,7 +341,8 @@ details.fold>div{padding-bottom:11px}
       <div class="vs" id="vsHz">
         <button class="lockb" title="Lock the slider">🔓</button>
         <div class="t">FREQUENCY</div>
-        <div class="val mono"><span>10.0</span><small> Hz</small></div>
+        <div class="val mono"><input class="valin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off"
+          aria-label="Frequency in hertz" value="10.0"><small> Hz</small></div>
         <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
         <div class="maxrow"><span class="switch"><input type="checkbox" class="ceilsw"><i></i></span>
@@ -330,7 +352,8 @@ details.fold>div{padding-bottom:11px}
       <div class="vs" id="vsPw">
         <button class="lockb" title="Lock the slider">🔓</button>
         <div class="t">PULSE WIDTH</div>
-        <div class="val mono"><span>100</span><small> µs</small></div>
+        <div class="val mono"><input class="valin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off"
+          aria-label="Pulse width" value="100"><small> µs</small></div>
         <div class="vtrack"><div class="fill"></div><div class="ceil hide"><span class="cv"></span><span class="cl">MAX</span></div><div class="th"></div></div>
         <div class="step"><button data-d="-1">−</button><button data-d="1">+</button></div>
         <div class="maxrow"><span class="switch"><input type="checkbox" class="ceilsw"><i></i></span>
@@ -341,8 +364,9 @@ details.fold>div{padding-bottom:11px}
     <div class="drvchk" id="drvChk"></div>
     <div class="note small">Duty is reported, not set: it follows frequency × pulse width. With a ceiling on, the top of
       the slider <b>is</b> the ceiling and the scale is even below it - halfway up is half the ceiling, a quarter up is a
-      quarter of it. A ceiling can only be changed while the coil is off or paused; the lock button freezes a slider
-      against accidental touches. A pulse is always shorter than its own period, so the pulse-width ceiling is also held
+      quarter of it. Tap a value to type it instead (a pulse width also takes a unit: <span class="mono">250us</span>,
+      <span class="mono">1.5ms</span>). A ceiling can only be changed while the coil is off or paused; the lock button
+      freezes a slider and its value against accidental touches. A pulse is always shorter than its own period, so the pulse-width ceiling is also held
       under whatever the current frequency allows - the line under the slider says which limit is binding.</div>
   </div>
 
@@ -350,7 +374,7 @@ details.fold>div{padding-bottom:11px}
     <h2>Live</h2>
     <div class="tiles" id="liveTiles">
       <div class="tile"><div class="l">|B| center</div><div class="v mono" id="lvB0">—</div><div class="s" id="lvB0s"></div></div>
-      <div class="tile"><div class="l">dB/dt peak</div><div class="v mono" id="lvDb">—</div><div class="s">since clear</div></div>
+      <div class="tile"><div class="l">dB/dt peak center</div><div class="v mono" id="lvDb">—</div><div class="s" id="lvDbS">since clear</div></div>
       <div class="tile"><div class="l">B at depth</div><div class="v mono" id="lvBd">—</div><div class="s" id="lvBdS">est · model × meas</div></div>
       <div class="tile"><div class="l">Measured freq</div><div class="v mono" id="lvF">—</div><div class="s" id="lvFs"></div></div>
       <div class="tile" id="tileTc"><div class="l">Coil temp</div><div class="v mono" id="lvTc">—</div><div class="s" id="lvTcS"></div></div>
@@ -494,7 +518,8 @@ details.fold>div{padding-bottom:11px}
     <div class="tiles">
       <div class="tile"><div class="l">|B| center</div><div class="v mono" id="mB0">—</div><div class="s" id="mB0s"></div></div>
       <div class="tile"><div class="l">|B| perimeter</div><div class="v mono" id="mB1">—</div><div class="s" id="mB1s"></div></div>
-      <div class="tile"><div class="l">dB/dt</div><div class="v mono" id="mDb">—</div><div class="s">center, live</div></div>
+      <div class="tile"><div class="l">dB/dt center</div><div class="v mono" id="mDb">—</div><div class="s">live</div></div>
+      <div class="tile"><div class="l">dB/dt perimeter</div><div class="v mono" id="mDb1">—</div><div class="s">live</div></div>
       <div class="tile"><div class="l">Measured freq</div><div class="v mono" id="mF">—</div><div class="s" id="mFs"></div></div>
     </div>
     <div class="chips mt8">
@@ -511,7 +536,8 @@ details.fold>div{padding-bottom:11px}
     <div class="tiles">
       <div class="tile"><div class="l">|B| max center</div><div class="v mono" id="sMax0">—</div><div class="s" id="sMax0d"></div></div>
       <div class="tile"><div class="l">|B| max perim</div><div class="v mono" id="sMax1">—</div></div>
-      <div class="tile"><div class="l">dB/dt max</div><div class="v mono" id="sDbm">—</div><div class="s" id="sDbmD"></div></div>
+      <div class="tile"><div class="l">dB/dt max center</div><div class="v mono" id="sDbm">—</div><div class="s" id="sDbmD"></div></div>
+      <div class="tile"><div class="l">dB/dt max perim</div><div class="v mono" id="sDbm1">—</div><div class="s" id="sDbm1D"></div></div>
       <div class="tile"><div class="l">B mean center</div><div class="v mono" id="sAvg0">—</div><div class="s" id="sAvg0d"></div></div>
       <div class="tile"><div class="l">B mean perim</div><div class="v mono" id="sAvg1">—</div></div>
       <div class="tile"><div class="l">B RMS center</div><div class="v mono" id="sRms">—</div></div>
@@ -545,6 +571,26 @@ details.fold>div{padding-bottom:11px}
 
 <div>
   <div class="card">
+    <h2>Realtime <span class="sp"></span><span class="small mut mono" id="rtInfo"></span></h2>
+    <div class="chbar">
+      <span class="zoom"><span class="small mut">Scroll</span>
+        <select class="txt" id="rtSpan">
+          <option value="1">1 s / screen</option><option value="2">2 s / screen</option>
+          <option value="5" selected>5 s / screen</option><option value="10">10 s / screen</option>
+          <option value="20">20 s / screen</option><option value="30">30 s / screen</option>
+        </select></span>
+      <div class="sp"></div>
+      <button class="btn sm" id="rtPause">Pause</button>
+    </div>
+    <div class="lg" id="rtLg"></div>
+    <div class="ch h300"><canvas id="chRt"></canvas></div>
+    <div class="small mut mt8">Top: |B| in µT. Bottom: dB/dt in mT/s. Solid = measured at the sensor on the coil face;
+      dashed = the same signal carried to the target depth through the coil model (center on axis, perimeter
+      under the perimeter sensor). Each column is the min-max of the samples behind it, so pulses show as spikes
+      at any scroll speed. Tap a series to show or hide it.</div>
+  </div>
+
+  <div class="card">
     <h2>Signal filtering</h2>
     <div class="row"><div class="lbl">Smoothing<span class="small mut">settles the live field and dB/dt readouts - heavier
       settles slower and can round off a sharp real peak</span></div>
@@ -568,8 +614,15 @@ details.fold>div{padding-bottom:11px}
         <button data-a="3">High</button>
         <button data-a="4">Max</button>
       </div></div>
-    <div class="note small">The notch cleans the signal itself - the scope, pulse shape, spectrum and every stat
-      below all see the result. Smoothing only settles the two live tiles (and the dB/dt peak stat); the scope,
+    <div class="row"><div class="lbl">Band-pass: high-pass<span class="small mut">removes slow drift and the static
+      offset below this frequency (blank = off). Note: it also takes out a pulse train's own DC level</span></div>
+      <input class="num" id="filtHp" type="number" inputmode="decimal" min="0" max="4000" step="any" placeholder="off"> <span class="small mut">Hz</span></div>
+    <div class="row"><div class="lbl">Band-pass: low-pass<span class="small mut">removes noise above this frequency
+      (blank = off). Below ~2 kHz it also rounds off the pulse edges</span></div>
+      <input class="num" id="filtLp" type="number" inputmode="decimal" min="0" max="4500" step="any" placeholder="off"> <span class="small mut">Hz</span></div>
+    <div class="small mut" id="filtBandInfo"></div>
+    <div class="note small">The notch and the band-pass clean the signal itself - the realtime chart, scope, pulse
+      shape, spectrum and every stat below all see the result (the magnet recovery watch does not). Smoothing only settles the two live tiles (and the dB/dt peak stat); the scope,
       the |B| peak/average/RMS stats and the FFT keep seeing the signal exactly as measured, so Raw always shows
       what the sensor is actually reporting.</div>
   </div>
@@ -580,27 +633,40 @@ details.fold>div{padding-bottom:11px}
       <div class="seg" id="scopeSrc">
         <button data-ch="0" class="on">B center</button>
         <button data-ch="1">B perim</button>
-        <button data-ch="2">dB/dt</button>
+        <button data-ch="2">dB/dt center</button>
+        <button data-ch="3">dB/dt perim</button>
       </div>
+    </div>
+    <div class="chbar">
+      <span class="zoom"><span class="small mut">Time / screen</span>
+        <button class="btn sm" id="scopeOut" title="Zoom out">−</button>
+        <select class="txt" id="scopeSpan"></select>
+        <button class="btn sm" id="scopeIn" title="Zoom in">+</button></span>
+      <label class="flex small mut">trigger on pulse <span class="switch"><input type="checkbox" id="scopeTrig" checked><i></i></span></label>
       <div class="sp"></div>
       <button class="btn sm" id="scopeHold">Hold</button>
     </div>
-    <div class="chips mb8" id="scopeSpan">
-      <button class="chip" data-ms="50">50 ms</button>
-      <button class="chip" data-ms="200">200 ms</button>
-      <button class="chip on" data-ms="1000">1 s</button>
-      <button class="chip" data-ms="3000">3 s</button>
-      <button class="chip" data-ms="10000">10 s</button>
-    </div>
     <div class="ch h240"><canvas id="chScope"></canvas><div class="cap" id="scopeCap"></div></div>
+    <div class="small mut mt8">Each point is one real sample (one every ~100 µs per sensor), so below a few ms per screen
+      the trace is the samples themselves. Triggered, the window lines up on a coil rising edge (time 0, 10% shown
+      before it). For the shape of a pulse at microsecond resolution use Pulse shape below.</div>
   </div>
 
   <div class="card">
     <h2>Pulse shape</h2>
-    <div class="ch h200"><canvas id="chFold"></canvas><div class="cap" id="foldCap"></div></div>
-    <div class="small mut mt8">Solid: the measured field folded over many pulse cycles (a sampling-scope view).
-      Dashed: the RL circuit model scaled to the measured amplitude - it carries the microsecond edges the
-      sampler cannot see.</div>
+    <div class="chbar">
+      <span class="zoom"><span class="small mut">Window</span>
+        <button class="btn sm" id="foldOut" title="Zoom out">−</button>
+        <select class="txt" id="foldWin"></select>
+        <button class="btn sm" id="foldIn" title="Zoom in">+</button></span>
+    </div>
+    <div class="lg" id="foldLg"></div>
+    <div class="ch h240"><canvas id="chFold"></canvas><div class="cap" id="foldCap"></div></div>
+    <div class="small mut mt8">The measured field folded over many pulse cycles against the coil's own edge times
+      (equivalent-time sampling, like a sampling scope): every cycle the samples land at slightly different
+      points of the pulse, so 240 bins fill in at a resolution far finer than the ~100 µs sample spacing - 2 µs per
+      bin at a 480 µs window. Time 0 is the rising edge. Dashed: the RL circuit model scaled to the measured
+      amplitude. A new window or a new pulse setting starts the fold over.</div>
   </div>
 
   <div class="card">
@@ -981,7 +1047,7 @@ function defCfg(){return{
   led:{mode:0,col:'#50c8ff',master:80,dataSrc:0,dataMin:70,dataMax:110,coilBright:100},
   hall:{sens5c:1.4,sens5p:1.4,vcc:3.3,ratio:true},
   therm:{beta:3950,r0:10,rs:10,top:false},
-  filt:{mode:0,notch:false,notchHz:60,specAvg:0},
+  filt:{mode:0,notch:false,notchHz:60,specAvg:0,hp:0,lp:0},
   coil:{layers:[{t:45,awg:20},{t:22,awg:12}],rin:0.75,ry:0.75,sameW:true,ins:0.3,washer:true,
     v:24,luh:0,rm:0,rds:10,vf:33,depth:2,gap:2},
   ui:{stagesOn:false,timerMin:30,lockHz:false,lockPw:false}
@@ -1011,6 +1077,8 @@ function normalize(c){
   o.safe.magUt=clamp(Number(o.safe.magUt)||3000,200,100000);
   o.safe.magSec=clamp(Number(o.safe.magSec)||5,1,60);
   o.safe.magAp=!!o.safe.magAp;
+  o.filt.hp=Number(o.filt.hp)>0?clamp(Number(o.filt.hp),0.05,4000):0;
+  o.filt.lp=Number(o.filt.lp)>0?clamp(Number(o.filt.lp),0.5,4500):0;
   // Whatever arrives - a preset, a board that ran older firmware, a hand-edited file - is put
   // through the same ceiling-then-period clamp the coil uses, so no stored pair can be out of range.
   for(const s of o.run.stages){
@@ -1282,6 +1350,8 @@ function drawChart(cv,opt){
       g.strokeStyle=col;g.lineWidth=1.2;g.beginPath();
       for(let i=0;i<opt.n;i++){const m=(s.ys[i]+s.ys2[i])/2,y=Y(m);i?g.lineTo(X(i),y):g.moveTo(X(i),y);}
       g.stroke();
+      if(s.dots){g.fillStyle=col;for(let i=0;i<opt.n;i++){const m=(s.ys[i]+s.ys2[i])/2;
+        if(Number.isFinite(m)){g.beginPath();g.arc(X(i),Y(m),2.2,0,6.2832);g.fill();}}}
       continue;
     }
     g.strokeStyle=col;g.lineWidth=s.width||1.6;
@@ -1394,6 +1464,7 @@ function renderState(){
     const b0=fmtUT(s.b0);$('#lvB0').innerHTML=b0[0]+'<small>'+b0[1]+'</small>';
     $('#lvB0s').textContent='perim '+fmtUT(s.b1)[0]+' '+fmtUT(s.b1)[1];
     $('#lvDb').innerHTML=fmt(s.dbm,s.dbm>=100?0:1)+'<small>mT/s</small>';
+    $('#lvDbS').textContent='perimeter '+fmt(Number(s.dbm1)||0,(Number(s.dbm1)||0)>=100?0:1)+' · since clear';
     const M=coilModelCached();
     const ratio=M&&M.sensCPerA>0?M.depthPerA/M.sensCPerA:0;
     const bd=fmtUT(s.bm0*ratio);
@@ -1476,14 +1547,14 @@ async function pollTick(){
         try{
           if(kind===0||kind===2){
             if(!SCOPE.hold){
-              const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
+              const r=await apiQuiet(scopeUrl());
               if(myGen!==POLL.gen)return;
               if(r&&r.n)SCOPE.wave=r;
             }
             scopeDraw();
-            wait=SCOPE.ms>=3000?500:250;
+            wait=SCOPE.us>=3e6?500:250;
           }else if(kind===1){
-            const f=await apiQuiet('/api/fold');
+            const f=await apiQuiet(foldUrl());
             if(myGen!==POLL.gen)return;
             SCOPE.fold=f;
             foldDraw();
@@ -1498,8 +1569,12 @@ async function pollTick(){
         }
       }else{                            // even ticks, or off the Measure tab entirely: the device state
         try{
-          const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
+          // On the Measure tab the realtime stream rides along with the state: one request, both answers.
+          const live=measuring&&rtWanted();
+          const url=live?'/api/live?st=1&max=240&from='+(RT.next||0):'/api/state';
+          let j=await(DEV.fails?hedged(url,{timeout:2500}):api(url,{timeout:2500}));
           if(myGen!==POLL.gen)return;
+          if(live&&j&&j.st){try{rtOnData(j,performance.now());}catch(e){}j=j.st;}
           if(j&&j.app==='magneto'){
             const was=ST;ST=j;
             DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
@@ -1518,7 +1593,7 @@ async function pollTick(){
             connRender();devConnect(false);return;
           }
         }
-        wait=DEV.fails?900:(measuring?250:350);
+        wait=DEV.fails?900:(measuring?(rtWanted()?120:250):350);
       }
     }
   }finally{
@@ -1611,7 +1686,7 @@ $('#btnTripReset').onclick=()=>cmd('tripreset');
    quarter of it - no log scale, no values hiding above the line. */
 function vslider(el,o){
   const track=el.querySelector('.vtrack'),fill=el.querySelector('.fill'),th=el.querySelector('.th'),
-    ceil=el.querySelector('.ceil'),valEl=el.querySelector('.val span'),lockb=el.querySelector('.lockb'),
+    ceil=el.querySelector('.ceil'),valEl=el.querySelector('.val .valin'),lockb=el.querySelector('.lockb'),
     maxRow=el.querySelector('.maxrow'),maxIn=el.querySelector('.maxrow input.num'),
     ceilSw=el.querySelector('.ceilsw'),limEl=el.querySelector('.lim');
   let dragging=false,dragUntil=0;
@@ -1641,7 +1716,8 @@ function vslider(el,o){
     const v=o.get(),f=frac(v);
     fill.style.height=(f*100)+'%';
     th.style.bottom=(f*100)+'%';
-    valEl.textContent=o.fmt(v);
+    if(document.activeElement!==valEl){valEl.value=o.fmt(v);valEl.classList.remove('bad');}
+    valEl.readOnly=o.locked();
     el.classList.toggle('locked',o.locked());
     lockb.textContent=o.locked()?'🔒':'🔓';
     paintTicks();
@@ -1681,6 +1757,27 @@ function vslider(el,o){
     o.set(o.clampV(o.get()+o.stepBy(o.get())*Number(b.dataset.d)));
     o.commit();paint();});
   lockb.onclick=()=>{o.setLock(!o.locked());paint();};
+  // Typed entry: the same clamp and the same commit path as a drag, so a typed number can never land
+  // anywhere a slider position could not (ceiling, period, 0-250 Hz). Enter or leaving the field
+  // applies it; Escape puts the current value back.
+  const applyTyped=()=>{
+    if(o.locked()){paint();return;}
+    const v=o.parse(valEl.value);
+    if(!Number.isFinite(v)||v<0){valEl.classList.add('bad');return;}
+    valEl.classList.remove('bad');
+    const nv=o.clampV(v);
+    if(nv===o.get()){valEl.value=o.fmt(nv);paint();return;}   // Enter then blur: apply once, not twice
+    o.set(nv);
+    o.commit();
+    dragUntil=Date.now()+700;
+    valEl.value=o.fmt(o.get());
+    paint();};
+  valEl.addEventListener('focus',()=>{if(!o.locked())setTimeout(()=>{try{valEl.select();}catch(e){}},0);});
+  valEl.addEventListener('keydown',ev=>{
+    if(ev.key==='Enter'){ev.preventDefault();applyTyped();valEl.blur();}
+    else if(ev.key==='Escape'){valEl.value=o.fmt(o.get());valEl.classList.remove('bad');valEl.blur();}});
+  valEl.addEventListener('change',applyTyped);
+  valEl.addEventListener('blur',()=>{if(valEl.classList.contains('bad')){valEl.value=o.fmt(o.get());valEl.classList.remove('bad');}});
   // ceiling on/off. Switching it on starts from where the slider is now, so the number box has a
   // sensible value to edit instead of jumping the range.
   ceilSw.addEventListener('change',()=>{
@@ -1729,6 +1826,7 @@ const VSH=vslider($('#vsHz'),{
   clampV:hzFor,
   stepBy:v=>v>=100?1:0.1,
   fmt:v=>fmtHzV(v),ceilFmt:v=>fmtHzV(v),
+  parse:t=>parseFloat(String(t).replace(',','.').replace(/hz/i,'')),
   locked:()=>cfg.ui.lockHz,setLock:v=>{cfg.ui.lockHz=v;touch();},
   ceiling:()=>cfg.max.hz,
   setCeiling:v=>{cfg.max.hz=v>0?clamp(Math.round(v*10)/10,0.1,HZ_MAX):0;clampAll();},
@@ -1753,6 +1851,13 @@ const VSP=vslider($('#vsPw'),{
   clampV:v=>pwClamp(curHz(),v,cfg.max.pw),
   stepBy:v=>v>=20000?1000:v>=2000?100:v>=200?10:1,
   fmt:v=>v>=10000?fmt(v/1000,1):String(Math.round(v)),ceilFmt:v=>String(Math.round(v)),
+  // A bare number is in the unit the field is showing (µs, or ms once the value is 10 ms or more);
+  // a unit typed with it wins: 250us, 250µs, 1.5ms, 0.02s.
+  parse:t=>{
+    const m=String(t).trim().toLowerCase().replace(',','.').match(/^([0-9]*\.?[0-9]+)\s*(us|µs|μs|ms|s)?$/);
+    if(!m)return NaN;
+    const v=parseFloat(m[1]),u=m[2]||(curPw()>=10000?'ms':'us');
+    return u==='ms'?v*1000:u==='s'?v*1e6:v;},
   locked:()=>cfg.ui.lockPw,setLock:v=>{cfg.ui.lockPw=v;touch();},
   ceiling:()=>cfg.max.pw,
   setCeiling:v=>{cfg.max.pw=v>0?clamp(Math.round(v),PW_MIN,PW_MAX):0;clampAll();},
@@ -2242,6 +2347,25 @@ function fillFilt(){
   $('#rowNotchHz').classList.toggle('hide',!f.notch);
   $$('#filtNotchHz button').forEach(b=>b.classList.toggle('on',Number(b.dataset.hz)===f.notchHz));
   $$('#filtSpecAvg button').forEach(b=>b.classList.toggle('on',Number(b.dataset.a)===f.specAvg));
+  const hp=$('#filtHp'),lp=$('#filtLp');
+  if(hp!==document.activeElement)hp.value=f.hp>0?String(f.hp):'';
+  if(lp!==document.activeElement)lp.value=f.lp>0?String(f.lp):'';
+  bandInfoPaint();
+}
+/* What the band-pass will actually do at the board's sample rate - the same rules mg::bandCoeffs()
+   applies, so a corner the firmware will switch off is said to be off here too. */
+function bandInfoPaint(){
+  const f=cfg.filt,fs=ST&&ST.fs>0?ST.fs:10000,el=$('#filtBandInfo');
+  if(!el)return;
+  const lpOn=f.lp>0&&f.lp<0.45*fs,hpOn=f.hp>0&&f.hp<0.45*fs&&(!lpOn||f.hp<f.lp);
+  const parts=[];
+  if(f.lp>0&&!lpOn)parts.push('<span class="warnTxt">low-pass off: '+fmt(f.lp,0)+' Hz is past the '+fmt(0.45*fs,0)+' Hz limit at '+fmt(fs/1000,1)+' kS/s</span>');
+  if(f.hp>0&&!hpOn)parts.push('<span class="warnTxt">high-pass off: it has to sit below the low-pass</span>');
+  if(hpOn&&lpOn)parts.push('passing '+fmtHzV(f.hp)+' - '+fmtHzV(f.lp)+' Hz, -3 dB at both corners, 12 dB/octave outside');
+  else if(hpOn)parts.push('high-pass at '+fmtHzV(f.hp)+' Hz (-3 dB), 12 dB/octave below');
+  else if(lpOn)parts.push('low-pass at '+fmtHzV(f.lp)+' Hz (-3 dB), 12 dB/octave above');
+  else if(!parts.length)parts.push('band-pass off');
+  el.innerHTML=parts.join(' · ');
 }
 $('#filtMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   cfg.filt.mode=Number(b.dataset.m);fillFilt();touch();});
@@ -2250,44 +2374,160 @@ $('#filtNotchHz').addEventListener('click',e=>{const b=e.target.closest('button'
   cfg.filt.notchHz=Number(b.dataset.hz);fillFilt();touch();});
 $('#filtSpecAvg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   cfg.filt.specAvg=Number(b.dataset.a);fillFilt();touch();});
+function bandSet(key,el,lo,hi){
+  const t=el.value.trim(),v=parseFloat(t.replace(',','.'));
+  cfg.filt[key]=t===''||!(v>0)?0:clamp(v,lo,hi);
+  el.value=cfg.filt[key]>0?String(cfg.filt[key]):'';
+  bandInfoPaint();touch();
+}
+$('#filtHp').addEventListener('change',e=>bandSet('hp',e.target,0.05,4000));
+$('#filtLp').addEventListener('change',e=>bandSet('lp',e.target,0.5,4500));
 
-const SCOPE={ch:0,ms:1000,hold:false,wave:null,fold:null,spec:null};
+/* ---- shared: series colors and time units ----
+   Eight series, eight colors (each also set apart by solid = face, dashed = depth, so it never rests
+   on hue alone). Defined as --s1..--s8 in both themes. */
+const SER_COL={bc:'--s1',bp:'--s2',bcd:'--s3',bpd:'--s4',dc:'--s5',dp:'--s6',dcd:'--s7',dpd:'--s8'};
+function timeUnit(spanUs){
+  if(spanUs<2000)return{div:1,suf:'µs'};
+  if(spanUs<2e6)return{div:1000,suf:'ms'};
+  return{div:1e6,suf:'s'};
+}
+function fmtSpanUs(us){
+  if(us>=1e6)return fmt(us/1e6,us%1e6?1:0)+' s';
+  if(us>=1000)return fmt(us/1000,us%1000?1:0)+' ms';
+  return Math.round(us)+' µs';
+}
+// Fill interior NaN gaps by straight lines (bins of a fold that no sample has landed in yet), so the
+// trace reads as a curve; the ends are left empty rather than invented.
+function bridge(ys){
+  const out=ys.map(v=>v===null?NaN:v);
+  let last=-1;
+  for(let i=0;i<out.length;i++){
+    if(!Number.isFinite(out[i]))continue;
+    if(last>=0&&i-last>1)for(let k=last+1;k<i;k++)out[k]=out[last]+(out[i]-out[last])*(k-last)/(i-last);
+    last=i;
+  }
+  return out;
+}
+/* The depth factors: the coil model's B per ampere at the target depth over B per ampere at each
+   sensor. dB/dt scales by the same number (the field is linear in the current at every point). The
+   perimeter one is taken under the perimeter sensor; where the model puts almost no field at that
+   sensor the ratio means nothing and is left out. */
+let DEPTHK={key:'',c:NaN,p:NaN};
+function depthK(){
+  const M=coilModelCached();
+  if(!M)return DEPTHK;
+  const key=MCACHE.key+'|'+cfg.coil.depth;
+  if(DEPTHK.key!==key){
+    const c=M.sensCPerA>0?M.depthPerA/M.sensCPerA:NaN;
+    const pd=coilBperA(M.turns,M.outer,-cfg.coil.depth/100)[0];
+    const p=Math.abs(M.perimPerA)>Math.abs(M.sensCPerA)*0.02?pd/M.perimPerA:NaN;
+    DEPTHK={key,c,p};
+  }
+  return DEPTHK;
+}
+
+/* ---- scope ---- */
+const SCOPE_SPANS=[500,1000,2000,5000,10000,20000,50000,100000,200000,500000,1e6,2e6,5e6,1e7];
+const SCOPE=Object.assign({ch:0,us:1e6,trig:true,hold:false,wave:null,fold:null,spec:null},
+  (()=>{const v=load('mg-scope',null);return v&&typeof v==='object'?{ch:v.ch|0,us:Number(v.us)||1e6,trig:v.trig!==false}:{};})());
+if(SCOPE.ch<0||SCOPE.ch>3)SCOPE.ch=0;
+if(!SCOPE_SPANS.includes(SCOPE.us))SCOPE.us=1e6;
+const scopeSave=()=>store('mg-scope',{ch:SCOPE.ch,us:SCOPE.us,trig:SCOPE.trig});
+$('#scopeSpan').innerHTML=SCOPE_SPANS.map(u=>'<option value="'+u+'">'+fmtSpanUs(u)+'</option>').join('');
+function scopeUi(){
+  $$('#scopeSrc button').forEach(x=>x.classList.toggle('on',Number(x.dataset.ch)===SCOPE.ch));
+  $('#scopeSpan').value=String(SCOPE.us);
+  $('#scopeTrig').checked=SCOPE.trig;
+  const i=SCOPE_SPANS.indexOf(SCOPE.us);
+  $('#scopeIn').disabled=i<=0;$('#scopeOut').disabled=i>=SCOPE_SPANS.length-1;
+}
+function scopeChanged(){SCOPE.wave=null;CHS.delete($('#chScope'));scopeUi();scopeSave();measureKick();}
 $('#scopeSrc').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  SCOPE.ch=Number(b.dataset.ch);
-  $$('#scopeSrc button').forEach(x=>x.classList.toggle('on',x===b));
-  CHS.delete($('#chScope'));});
-$('#scopeSpan').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;
-  SCOPE.ms=Number(b.dataset.ms);
-  $$('#scopeSpan .chip').forEach(x=>x.classList.toggle('on',x===b));
-  CHS.delete($('#chScope'));});
+  SCOPE.ch=Number(b.dataset.ch);scopeChanged();});
+$('#scopeSpan').addEventListener('change',e=>{SCOPE.us=Number(e.target.value);scopeChanged();});
+$('#scopeIn').onclick=()=>{const i=SCOPE_SPANS.indexOf(SCOPE.us);if(i>0){SCOPE.us=SCOPE_SPANS[i-1];scopeChanged();}};
+$('#scopeOut').onclick=()=>{const i=SCOPE_SPANS.indexOf(SCOPE.us);if(i<SCOPE_SPANS.length-1){SCOPE.us=SCOPE_SPANS[i+1];scopeChanged();}};
+$('#scopeTrig').addEventListener('change',e=>{SCOPE.trig=e.target.checked;scopeChanged();});
 $('#scopeHold').onclick=()=>{SCOPE.hold=!SCOPE.hold;
   $('#scopeHold').textContent=SCOPE.hold?'Resume':'Hold';
   $('#scopeHold').classList.toggle('pri',SCOPE.hold);};
+scopeUi();
+function scopeUrl(){return '/api/wave?ch='+SCOPE.ch+'&us='+SCOPE.us+'&trig='+(SCOPE.trig?1:0);}
 
 // polling itself (pollTick, measureKick) lives with devPoll's old spot, above - one shared single-
-// flight queue for /api/state and these three payloads now, not two competing timer chains.
+// flight queue for /api/state and these payloads, not competing timer chains.
 function scopeDraw(){
   const r=SCOPE.wave;
   if(!r||!r.n)return;
-  drawChart($('#chScope'),{n:r.n,series:[{ys:r.mn,ys2:r.mx,color:SCOPE.ch===2?cssVar('--warn'):cssVar('--acc')}],
-    x0:-r.ms/1000,x1:0,xu:'s',zero:false});
-  $('#scopeCap').textContent=(SCOPE.ch===2?'dB/dt, mT/s':'|B|, µT')+' · '+fmt(r.fs/1000,1)+' kS/s'+(SCOPE.hold?' · held':'');
+  const ch=r.ch!==undefined?r.ch:SCOPE.ch;
+  const u=timeUnit(r.us||SCOPE.us);
+  const x0=(r.x0||0)/u.div,x1=((r.x0||0)+(r.dx||0)*Math.max(r.n-1,1))/u.div;
+  const col=cssVar(SER_COL[['bc','bp','dc','dp'][ch]||'bc']);
+  const trig=r.trig===1;
+  drawChart($('#chScope'),{n:r.n,series:[{ys:bridge(r.mn),ys2:bridge(r.mx),color:col,dots:r.n<=90}],
+    x0,x1,xu:u.suf,zero:false,marker:trig&&x1>x0?(0-x0)/(x1-x0):undefined});
+  const what=['B center, µT','B perimeter, µT','dB/dt center, mT/s','dB/dt perimeter, mT/s'][ch]||'';
+  const per=r.fs>0?1e6/r.fs:0;
+  $('#scopeCap').textContent=what+' · '+fmtSpanUs(r.us||SCOPE.us)+' / screen'+
+    (r.n<=90&&per?' · a sample every '+fmt(per,0)+' µs':' · '+fmt(r.fs/1000,1)+' kS/s')+
+    (SCOPE.trig?(trig?' · triggered on the rising edge (0)':' · free-running (no pulse to trigger on)'):'')+
+    (SCOPE.hold?' · held':'');
 }
-// The RL model wave, cached on its own inputs. foldDraw() used to re-solve this (≈1400 exp() calls)
-// on every redraw, which was fine at one redraw per fetch; now that redraws happen every animation
-// frame (see the render loop below) instead, re-solving an unchanged pulse that often would be
-// thousands of wasted solves a minute for a chart that looks identical.
+
+/* ---- pulse shape ---- */
+const FOLD_WINS=[50,100,200,500,1000,2000,5000,10000,20000,50000,0];   // 0 = the whole period
+const FOLD=Object.assign({win:'auto',show:{c:true,p:true,m:true}},(()=>{
+  const v=load('mg-fold',null);if(!v||typeof v!=='object')return{};
+  return{win:v.win==='auto'||FOLD_WINS.includes(Number(v.win))?(v.win==='auto'?'auto':Number(v.win)):'auto',
+    show:Object.assign({c:true,p:true,m:true},v.show||{})};})());
+const foldSave=()=>store('mg-fold',{win:FOLD.win,show:FOLD.show});
+$('#foldWin').innerHTML='<option value="auto">Auto (fits the pulse)</option>'+
+  FOLD_WINS.map(w=>'<option value="'+w+'">'+(w?fmtSpanUs(w):'Whole period')+'</option>').join('');
+// Auto: the pulse plus its decay - 2.5x the on-time and at least 200 us past it, on the next nice step.
+function foldWinUs(){
+  if(FOLD.win!=='auto')return FOLD.win;
+  const pw=ST&&ST.hwpw>0?ST.hwpw:(ST&&ST.pw>0?ST.pw:curPw());
+  const per=ST&&ST.hwper>0?ST.hwper:periodUs(curHz());
+  const want=Math.max(pw*2.5,pw+200,50);
+  for(const w of FOLD_WINS)if(w&&w>=want)return per&&w>=per?0:w;
+  return 0;
+}
+function foldUi(){
+  $('#foldWin').value=String(FOLD.win);
+  const cur=FOLD.win==='auto'?foldWinUs():FOLD.win;
+  const i=FOLD_WINS.indexOf(cur);
+  $('#foldIn').disabled=i===0;$('#foldOut').disabled=cur===0;
+  const lg=[['c','B center','bc',false],['p','B perimeter','bp',false],['m','RL model (center)','bcd',true]];
+  $('#foldLg').innerHTML=lg.map(x=>'<button data-k="'+x[0]+'" class="'+(FOLD.show[x[0]]?'on':'')+'"><i class="'+(x[3]?'dash':'')+
+    '" style="background:var('+SER_COL[x[2]]+');color:var('+SER_COL[x[2]]+')"></i>'+x[1]+'</button>').join('');
+}
+function foldChanged(){SCOPE.fold=null;CHS.delete($('#chFold'));foldUi();foldSave();measureKick();}
+$('#foldWin').addEventListener('change',e=>{const v=e.target.value;FOLD.win=v==='auto'?'auto':Number(v);foldChanged();});
+// zooming steps through the list from wherever the window is now, auto included
+$('#foldIn').onclick=()=>{const cur=foldWinUs(),i=cur===0?FOLD_WINS.length-1:FOLD_WINS.indexOf(cur);
+  if(i>0){FOLD.win=FOLD_WINS[i-1];foldChanged();}};
+$('#foldOut').onclick=()=>{const cur=foldWinUs(),i=FOLD_WINS.indexOf(cur);
+  if(cur!==0&&i>=0&&i<FOLD_WINS.length-1){FOLD.win=FOLD_WINS[i+1];foldChanged();}};
+$('#foldLg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  FOLD.show[b.dataset.k]=!FOLD.show[b.dataset.k];foldUi();foldSave();});
+foldUi();
+function foldUrl(){return '/api/fold?win='+foldWinUs();}
+
+// The RL model wave on the fold's own time axis, cached on its inputs (solving it is ~1400 exp()
+// calls; the chart redraws every animation frame).
 let FOLD_CACHE={key:'',model:null};
-function foldModelWave(M,pw,per,n){
-  const key=MCACHE.key+'|'+pw+'|'+per+'|'+n;
+function foldModelWave(M,pw,per,n,x0,dx){
+  const key=MCACHE.key+'|'+pw+'|'+per+'|'+n+'|'+x0+'|'+dx;
   if(FOLD_CACHE.key!==key){
     const p=solvePulse(cfg.coil.v,M.L,M.R,cfg.coil.vf,pw,per);
     const model=new Array(n).fill(0);
-    let wi=0;
     for(let i=0;i<n;i++){
-      const t=i/n*per;
-      while(wi<p.wave.length-1&&p.wave[wi+1][0]<=t)wi++;
-      model[i]=p.wave[wi][1]*M.sensCPerA*1e6;
+      let t=x0+(i+0.5)*dx;
+      t=((t%per)+per)%per;
+      let lo=0,hi=p.wave.length-1;
+      while(hi-lo>1){const mid=(lo+hi)>>1;if(p.wave[mid][0]<=t)lo=mid;else hi=mid;}
+      model[i]=p.wave[lo][1]*M.sensCPerA*1e6;
     }
     FOLD_CACHE={key,model};
   }
@@ -2297,21 +2537,30 @@ function foldDraw(){
   const r=SCOPE.fold,cv=$('#chFold');
   if(!r||!r.n){
     drawChart(cv,{n:2,series:[{ys:[0,0],color:cssVar('--line2')}],noSmooth:true});
-    $('#foldCap').textContent='coil off - no pulse to fold';
+    $('#foldCap').textContent=r&&r.run?'locking onto the pulse train…':'coil off - no pulse to fold';
     return;}
-  // model overlay: the RL wave through B-per-ampere at the center sensor, on the same phase axis
+  const win=r.win>0?r.win:r.per,pre=r.pre||0,dx=win/r.n;
+  const u=timeUnit(win);
+  const x0=-pre/u.div,x1=(win-pre-dx)/u.div;
+  const series=[];
+  const c=bridge(r.b),p=r.p?bridge(r.p):null;
+  if(FOLD.show.c)series.push({ys:c,color:cssVar(SER_COL.bc),width:2});
+  if(FOLD.show.p&&p)series.push({ys:p,color:cssVar(SER_COL.bp),width:1.6});
   const M=coilModelCached();
-  let model=null;
-  if(M&&ST){
-    model=foldModelWave(M,ST.pw||curPw(),r.per,r.n).slice();
-    // scale the (cached, shape-only) model to this frame's measured amplitude without touching the cache
-    const mMax=Math.max(...r.b),dMax=Math.max(...model);
+  if(FOLD.show.m&&M&&ST&&r.per>0){
+    const pw=r.on>0?r.on:(ST.pw||curPw());
+    const model=foldModelWave(M,pw,r.per,r.n,-pre,dx).slice();
+    let mMax=-Infinity,dMax=-Infinity;
+    for(const v of c)if(Number.isFinite(v)&&v>mMax)mMax=v;
+    for(const v of model)if(v>dMax)dMax=v;
     if(dMax>1e-9&&mMax>0.5)for(let i=0;i<r.n;i++)model[i]*=mMax/dMax;
+    series.push({ys:model,color:cssVar(SER_COL.bcd),dash:[5,4],width:1.3});
   }
-  const series=[{ys:r.b,color:cssVar('--acc'),width:2}];
-  if(model)series.push({ys:model,color:cssVar('--acc2'),dash:[5,4],width:1.3});
-  drawChart(cv,{n:r.n,series,x0:0,x1:r.per/1000,xu:'ms',zero:true});
-  $('#foldCap').textContent='µT across one period · '+r.cyc+' cycles folded';
+  if(!series.length)series.push({ys:[0,0],color:cssVar('--line2')});
+  drawChart(cv,{n:series[0].ys.length,series,x0,x1,xu:u.suf,zero:true,
+    marker:pre>0&&x1>x0?(0-x0)/(x1-x0):undefined});
+  $('#foldCap').textContent='µT · '+(r.win>0&&r.win<r.per?fmtSpanUs(win)+' around the rising edge':'one whole period')+
+    ' · '+fmt(win/r.n,win/r.n<10?1:0)+' µs/bin · '+r.hit+'/'+r.n+' bins filled · '+r.cyc+' cycles';
 }
 function specDraw(){
   const r=SCOPE.spec,cv=$('#chSpec');
@@ -2323,21 +2572,188 @@ function specDraw(){
     ('peak '+fmt(r.pk.hz,2)+' Hz · '+fmt(r.pk.amp,1)+' µT · SNR '+fmt(r.pk.snr,0)+' · Δf '+fmt(r.df,2)+' Hz'):
     ('no dominant tone · Δf '+fmt(r.df,2)+' Hz');
 }
+
+/* ---- realtime ----
+   The board keeps a ring of fixed-rate min/max buckets (~200 a second) of all four signals; the page
+   asks for "everything since the last one I have" on every state poll while the Measure tab is open,
+   and keeps up to 30 s here. The chart is drawn every animation frame at a steady clock - the board's
+   bucket counter mapped onto this page's clock - running a little behind the newest data, by about
+   one poll gap, so the trace slides continuously instead of jumping each time a fetch lands. */
+const RT_SER=[
+  {k:'bc', lab:'B center',               pane:0,src:0,depth:false},
+  {k:'bp', lab:'B perimeter',            pane:0,src:1,depth:false},
+  {k:'bcd',lab:'B center at depth',      pane:0,src:0,depth:true},
+  {k:'bpd',lab:'B perimeter at depth',   pane:0,src:1,depth:true},
+  {k:'dc', lab:'dB/dt center',           pane:1,src:2,depth:false},
+  {k:'dp', lab:'dB/dt perimeter',        pane:1,src:3,depth:false},
+  {k:'dcd',lab:'dB/dt center at depth',  pane:1,src:2,depth:true},
+  {k:'dpd',lab:'dB/dt perimeter at depth',pane:1,src:3,depth:true},
+];
+const RT_CAP=8192;
+const RT={span:5,paused:false,pauseAt:0,dt:0,next:0,a:0,t0:0,lastArr:0,gapMax:600,
+  buf:new Float32Array(RT_CAP*8),stamp:new Float64Array(RT_CAP).fill(-1),y:[null,null],
+  show:{bc:true,bp:true,bcd:true,bpd:false,dc:true,dp:true,dcd:true,dpd:false}};
+(()=>{const v=load('mg-rt',null);if(v&&typeof v==='object'){
+  if([1,2,5,10,20,30].includes(Number(v.span)))RT.span=Number(v.span);
+  if(v.show&&typeof v.show==='object')for(const k in RT.show)if(typeof v.show[k]==='boolean')RT.show[k]=v.show[k];}})();
+const rtSave=()=>store('mg-rt',{span:RT.span,show:RT.show});
+function rtUi(){
+  $('#rtSpan').value=String(RT.span);
+  $('#rtPause').textContent=RT.paused?'Resume':'Pause';
+  $('#rtPause').classList.toggle('pri',RT.paused);
+  const K=depthK();
+  $('#rtLg').innerHTML=RT_SER.map(s=>{
+    const na=s.depth&&!Number.isFinite(s.src===1||s.src===3?K.p:K.c);
+    return '<button data-k="'+s.k+'" class="'+(RT.show[s.k]&&!na?'on':'')+'"'+(na?' disabled title="the coil model puts no usable field at this sensor"':'')+
+      '><i class="'+(s.depth?'dash':'')+'" style="background:var('+SER_COL[s.k]+');color:var('+SER_COL[s.k]+')"></i>'+s.lab+'</button>';}).join('');
+}
+$('#rtSpan').addEventListener('change',e=>{RT.span=Number(e.target.value);rtSave();});
+$('#rtPause').onclick=()=>{
+  if(!RT.paused){RT.pauseAt=rtEdge(performance.now());RT.paused=true;}
+  else RT.paused=false;
+  rtUi();};
+$('#rtLg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;
+  RT.show[b.dataset.k]=!RT.show[b.dataset.k];rtUi();rtSave();});
+function rtWanted(){return TAB==='measure'&&!document.hidden&&!RT.paused;}
+function rtReset(){RT.stamp.fill(-1);RT.next=0;RT.t0=0;RT.lastArr=0;RT.y=[null,null];}
+function rtOnData(r,tArr){
+  if(!r||!(r.dt>0)||!Array.isArray(r.d))return;
+  if(RT.next&&r.next+50<RT.next)rtReset();          // the board's counter went backwards: it restarted
+  RT.dt=r.dt;
+  const n=r.n|0,d=r.d;
+  for(let i=0;i<n;i++){
+    const idx=r.start+i,slot=idx%RT_CAP;
+    for(let k=0;k<8;k++){const v=d[i*8+k];RT.buf[slot*8+k]=v===null?NaN:v;}
+    RT.stamp[slot]=idx;
+  }
+  RT.next=r.next;
+  // keep a smooth map from this page's clock to the board's bucket counter
+  const est=RT.t0?RT.a+(tArr-RT.t0)/RT.dt:NaN;
+  if(!Number.isFinite(est)||Math.abs(r.next-est)>1500/RT.dt){RT.a=r.next;RT.t0=tArr;}
+  else{RT.a+=(r.next-est)*0.08;}
+  if(RT.lastArr){const gap=tArr-RT.lastArr;RT.gapMax=Math.max(gap,RT.gapMax*0.97);}
+  RT.lastArr=tArr;
+  const fs=ST&&ST.fs>0?ST.fs:0;
+  $('#rtInfo').textContent=fmt(1000/RT.dt,0)+' buckets/s'+(fs?' · '+fmt(fs/1000,1)+' kS/s':'');
+}
+// the bucket index the right edge of the chart shows at local time t
+function rtEdge(t){
+  if(RT.paused)return RT.pauseAt;
+  if(!RT.t0||!(RT.dt>0))return 0;
+  const delay=clamp(RT.gapMax*1.2+80,250,2500);
+  return RT.a+(t-RT.t0-delay)/RT.dt;
+}
+function rtDraw(){
+  const cv=$('#chRt');
+  if(!cv)return;
+  const dpr=Math.min(devicePixelRatio||1,2),W=cv.clientWidth,H=cv.clientHeight;
+  if(!W||!H)return;
+  if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+  const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
+  const mut=cssVar('--mut'),line=cssVar('--line');
+  g.font='10px -apple-system,system-ui';
+  if(!(RT.dt>0)||!RT.t0){g.fillStyle=mut;g.fillText(DEV.on?'waiting for data…':'not connected',10,18);return;}
+  const padL=50,padR=8,padT=8,padB=18,gap=12;
+  const iw=Math.max(10,W-padL-padR),ph=(H-padT-padB-gap)/2;
+  const right=rtEdge(performance.now()),spanB=RT.span*1000/RT.dt,left=right-spanB;
+  const K=depthK(),cols=Math.max(2,Math.floor(iw));
+  const per=spanB/cols;
+  for(let pane=0;pane<2;pane++){
+    const top=padT+pane*(ph+gap);
+    // per-column min/max of every visible series
+    const vis=RT_SER.filter(s=>s.pane===pane&&RT.show[s.k]&&(!s.depth||Number.isFinite(s.src===1||s.src===3?K.p:K.c)));
+    const cmn=[],cmx=[];
+    let lo=Infinity,hi=-Infinity;
+    for(const s of vis){
+      const f=s.depth?(s.src===1||s.src===3?K.p:K.c):1;
+      const mn=new Float32Array(cols).fill(NaN),mx=new Float32Array(cols).fill(NaN);
+      for(let c=0;c<cols;c++){
+        const b0=Math.floor(left+c*per),b1=Math.max(b0+1,Math.floor(left+(c+1)*per));
+        let a=Infinity,b=-Infinity;
+        for(let i=b0;i<b1;i++){
+          if(i<0)continue;
+          const slot=i%RT_CAP;
+          if(RT.stamp[slot]!==i)continue;
+          let v0=RT.buf[slot*8+s.src*2]*f,v1=RT.buf[slot*8+s.src*2+1]*f;
+          if(f<0){const t=v0;v0=v1;v1=t;}
+          if(v0<a)a=v0;if(v1>b)b=v1;
+        }
+        if(b>=a){mn[c]=a;mx[c]=b;if(a<lo)lo=a;if(b>hi)hi=b;}
+      }
+      cmn.push(mn);cmx.push(mx);
+    }
+    // y range: grows at once (a spike is never clipped), shrinks gently, always includes zero
+    if(!(hi>lo)){lo=Number.isFinite(lo)?lo-1:-1;hi=Number.isFinite(hi)?hi+1:1;}
+    lo=Math.min(lo,0);hi=Math.max(hi,0);
+    const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
+    let y=RT.y[pane];
+    if(!y)y=RT.y[pane]={lo,hi};
+    else{
+      y.lo=lo<y.lo?lo:y.lo+(lo-y.lo)*0.04;
+      y.hi=hi>y.hi?hi:y.hi+(hi-y.hi)*0.04;
+    }
+    const Y=v=>top+ph*(1-(v-y.lo)/((y.hi-y.lo)||1));
+    // grid, y labels, pane title
+    g.strokeStyle=line;g.lineWidth=1;g.fillStyle=mut;g.textAlign='left';
+    const st=niceStep(y.hi-y.lo);
+    for(let v=Math.ceil(y.lo/st)*st;v<=y.hi;v+=st){const yy=Y(v);
+      g.beginPath();g.moveTo(padL,yy);g.lineTo(W-padR,yy);g.stroke();g.fillText(fmtTick(v),3,yy+3);}
+    if(y.lo<0&&y.hi>0){g.globalAlpha=.6;g.strokeStyle=mut;g.beginPath();g.moveTo(padL,Y(0));g.lineTo(W-padR,Y(0));g.stroke();g.globalAlpha=1;}
+    g.fillStyle=mut;g.fillText(pane?'dB/dt  mT/s':'|B|  µT',padL+4,top+10);
+    // traces: one vertical min-max stroke per column, joined - an envelope at any zoom
+    g.save();g.beginPath();g.rect(padL,top,iw,ph);g.clip();
+    vis.forEach((s,si)=>{
+      const mn=cmn[si],mx=cmx[si];
+      g.strokeStyle=cssVar(SER_COL[s.k]);g.lineWidth=s.depth?1.2:1.4;
+      g.setLineDash(s.depth?[5,4]:[]);
+      g.beginPath();let pen=false;
+      for(let c=0;c<cols;c++){
+        if(!Number.isFinite(mn[c])){pen=false;continue;}
+        const x=padL+c+0.5;
+        if(!pen){g.moveTo(x,Y(mx[c]));pen=true;}else g.lineTo(x,Y(mx[c]));
+        if(mn[c]!==mx[c])g.lineTo(x,Y(mn[c]));
+      }
+      g.stroke();
+    });
+    g.setLineDash([]);g.restore();
+  }
+  // shared time axis, seconds before "now"
+  g.fillStyle=mut;g.textAlign='center';g.strokeStyle=line;
+  const stX=niceStep(RT.span);
+  for(let v=0;v<=RT.span+1e-9;v+=stX){
+    const x=padL+iw*(1-v/RT.span);
+    g.beginPath();g.moveTo(x,padT);g.lineTo(x,H-padB);g.globalAlpha=.5;g.stroke();g.globalAlpha=1;
+    g.fillText(v===0?'now':'-'+fmtTick(v)+'s',x,H-5);
+  }
+  g.textAlign='left';
+}
+rtUi();
 function renderMeasure(){
   if(TAB!=='measure'||!ST)return;
   const s=ST;
   const put=(id,arr)=>{$('#'+id).innerHTML=arr[0]+'<small>'+arr[1]+'</small>';};
   put('mB0',fmtUT(s.b0));put('mB1',fmtUT(s.b1));
-  $('#mB0s').textContent=s.z0?'zeroed':'raw zero (Vcc/2)';
-  $('#mB1s').textContent=s.z1?'zeroed':'raw zero (Vcc/2)';
+  const zb=s.zb|0,zf=s.zf|0;
+  const zTxt=(bit,z)=>(zb&bit)?'zeroing…':(zf&bit)?'zero failed - too noisy':z?'zeroed':'raw zero (Vcc/2)';
+  $('#mB0s').textContent=zTxt(1,s.z0);
+  $('#mB1s').textContent=zTxt(2,s.z1);
+  ['#zero0','#zero1','#zeroBoth'].forEach(id=>$(id).disabled=!!zb);
   $('#mDb').innerHTML=fmt(s.db,Math.abs(s.db)>=100?0:1)+'<small>mT/s</small>';
+  const db1=Number(s.db1)||0;
+  $('#mDb1').innerHTML=fmt(db1,Math.abs(db1)>=100?0:1)+'<small>mT/s</small>';
   $('#mF').innerHTML=s.f>0?fmtHzV(s.f)+'<small>Hz</small>':'—';
   $('#mFs').textContent=s.f>0?fmt(s.fa,1)+' µT tone · SNR '+fmt(s.snr,0):'';
   $('#clipPill').classList.toggle('hide',!s.clip);
-  $('#zeroInfo').textContent='Zeroing stores 0.25 s of quiet field (Earth + offset) as the baseline. Zero with the coil OFF.';
+  $('#zeroInfo').textContent=zb?'Collecting the baseline…':
+    'Zeroing averages 0.5 s of field (Earth + sensor offset; a whole number of mains cycles) and stores it as the '+
+    'baseline, then restarts the stats, the pulse fold and the spectrum so nothing mixes the old baseline with the '+
+    'new. Best with the coil off; while it runs, samples inside each pulse and its decay are left out.'+
+    ((zf&3)?' The last zero could not find enough quiet samples between pulses - stop the coil and zero again.':'');
   $('#statWin').textContent='over '+fmtSec(s.ss);
   put('sMax0',fmtUT(s.bm0));put('sMax1',fmtUT(s.bm1));
   $('#sDbm').innerHTML=fmt(s.dbm,s.dbm>=100?0:1)+'<small>mT/s</small>';
+  const dbm1=Number(s.dbm1)||0;
+  $('#sDbm1').innerHTML=fmt(dbm1,dbm1>=100?0:1)+'<small>mT/s</small>';
   put('sAvg0',fmtUT(s.ba0));put('sAvg1',fmtUT(s.ba1));put('sRms',fmtUT(s.brms));
   // thermal card: live values, limits, and the rolling two-trace chart
   tempTile($('#mTileTc'),$('#mTc'),$('#mTcS'),s.tc,s.okc,s.dc,cfg.safe.coilMax);
@@ -2367,6 +2783,8 @@ function renderMeasure(){
     $('#sMax0d').textContent='at depth '+fmtUT(s.bm0*k)[0]+' '+fmtUT(s.bm0*k)[1];
     $('#sAvg0d').textContent='at depth '+fmtUT(s.ba0*k)[0]+' '+fmtUT(s.ba0*k)[1];
     $('#sDbmD').textContent='at depth '+fmt(s.dbm*k,1)+' mT/s';
+    const K=depthK();
+    $('#sDbm1D').textContent=Number.isFinite(K.p)?'at depth '+fmt(Math.abs(dbm1*K.p),1)+' mT/s':'';
     // face profile scaled to the center sensor
     const Iest=M.sensCPerA>0?(s.bm0*1e-6)/M.sensCPerA:0;
     const N=80,rmax=M.outer*1.35,ysF=[],ysD=[];
@@ -2799,7 +3217,7 @@ addEventListener('pageshow',kick);
 addEventListener('focus',()=>{if(!document.hidden)kick();});
 addEventListener('online',kick);
 $('#connPill').onclick=()=>kick();
-addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='measure'){scopeDraw();foldDraw();specDraw();}},200));
+addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='measure'){scopeDraw();foldDraw();specDraw();rtDraw();}},200));
 /* The Measure tab's three live charts redraw every animation frame instead of only when a fetch
    lands - a real autoscale move then glides over several frames instead of jumping once per poll,
    and a canvas that resizes (rotation, a tab becoming visible) is repainted at once instead of
@@ -2807,7 +3225,7 @@ addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='m
    once the page is backgrounded, so this costs nothing off the Measure tab or with the tab hidden.
    Wrapped so a transient drawing bug can only skip a frame, never kill the loop permanently. */
 function measureRenderTick(){
-  if(TAB==='measure'&&DEV.on){try{scopeDraw();foldDraw();specDraw();}catch(e){}}
+  if(TAB==='measure'&&DEV.on){try{scopeDraw();foldDraw();specDraw();}catch(e){}try{rtDraw();}catch(e){}}
   requestAnimationFrame(measureRenderTick);
 }
 requestAnimationFrame(measureRenderTick);

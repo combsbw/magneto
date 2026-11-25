@@ -82,6 +82,84 @@ inline float emaStep(float cur, float x, float alpha) {
   return isfinite(next) ? next : x;
 }
 
+// ---- user band-pass: high-pass and low-pass by corner frequency ---------------------------------
+// Each side is two cascaded one-pole sections, not a biquad: at the ~10 kHz processed rate a 0.5 Hz
+// high-pass biquad needs cos(w0) to a precision a float does not have, and its poles land somewhere
+// else entirely. A one-pole section only needs exp(-w), which a float holds to ~1e-7, so the corner
+// is where it was asked for at any setting. Each section's corner is moved so the PAIR is -3 dB at
+// the entered frequency (sqrt(sqrt(2) - 1) = 0.6436), and the pair rolls off at 12 dB/octave.
+// 0 on either side = that side off; both off = exact pass-through.
+static const float BP_PAIR_K = 0.643594f;
+struct BandPass {
+  float hpA = 0.f;      // high-pass pole (0 = off)
+  float lpB = 0.f;      // low-pass step  (0 = off)
+};
+struct BandState {
+  float hx[2] = {0, 0}, hy[2] = {0, 0};   // high-pass sections: last input, last output
+  float ly[2] = {0, 0};                   // low-pass sections
+  bool primed = false;
+};
+
+// hpHz / lpHz are the corners asked for; fs the processed sample rate. Corners that make no sense at
+// this rate (past ~0.45 fs, or a high-pass at or above the low-pass) switch that side off rather than
+// leave a filter that rings or blocks everything.
+inline BandPass bandCoeffs(float hpHz, float lpHz, float fs) {
+  BandPass b;
+  if (!(fs > 1.f)) return b;
+  bool lpOn = lpHz > 0.f && lpHz < 0.45f * fs;
+  bool hpOn = hpHz > 0.f && hpHz < 0.45f * fs && (!lpOn || hpHz < lpHz);
+  if (hpOn) {
+    float fc = hpHz * BP_PAIR_K;                    // each section lower, so the pair is -3 dB at hpHz
+    b.hpA = expf(-6.28318530718f * fc / fs);
+  }
+  if (lpOn) {
+    float fc = lpHz / BP_PAIR_K;                    // each section higher, same reason
+    if (fc > 0.49f * fs) fc = 0.49f * fs;
+    b.lpB = 1.f - expf(-6.28318530718f * fc / fs);
+  }
+  return b;
+}
+inline bool bandActive(const BandPass& b) { return b.hpA > 0.f || b.lpB > 0.f; }
+
+// First sample after a reset seeds the state as if the input had always been x: no step transient.
+inline void bandPrime(const BandPass& c, BandState& s, float x) {
+  s.hx[0] = x;                                    // section 1 has always seen x ...
+  s.hx[1] = 0.f;                                  // ... so section 2 has always seen its zero output
+  s.hy[0] = s.hy[1] = 0.f;
+  float lpIn = c.hpA > 0.f ? 0.f : x;             // the low-pass sees the high-pass output when both are on
+  s.ly[0] = s.ly[1] = lpIn;
+  s.primed = true;
+}
+
+inline float bandStep(const BandPass& c, BandState& s, float x) {
+  if (!isfinite(x)) return 0.f;
+  if (!bandActive(c)) return x;
+  if (!s.primed) bandPrime(c, s, x);
+  float y = x;
+  if (c.hpA > 0.f) {
+    for (int k = 0; k < 2; k++) {
+      float o = c.hpA * (s.hy[k] + y - s.hx[k]);
+      s.hx[k] = y;
+      s.hy[k] = o;
+      y = o;
+    }
+  }
+  if (c.lpB > 0.f) {
+    for (int k = 0; k < 2; k++) {
+      s.ly[k] += c.lpB * (y - s.ly[k]);
+      y = s.ly[k];
+    }
+  }
+  if (!isfinite(y)) { s = BandState{}; return 0.f; }
+  return y;
+}
+
+// Notch state seeded for a steady input x (unity DC gain), so a re-zero does not ring it.
+inline void biquadPrime(BiquadState& s, float x) {
+  s.x1 = s.x2 = x;
+  s.y1 = s.y2 = x;
+}
+
 // ---- ADC stream health & staleness guard -------------------------------------------------------
 // ESP32-S3 continuous ADC DMA (IDF 4.4 / arduino-esp32 2.0.17) can stop delivering frames after a
 // long SPI-flash erase (non-IRAM GDMA ISR + descriptor wraparound) or a Wi-Fi RF/PHY calibration
