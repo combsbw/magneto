@@ -812,7 +812,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 const DEV={on:false,fails:0,polling:false,rebooting:false,net:'',fail:false};
-const CONN={busy:false,n:0,t:0};
+const CONN={busy:false,since:0,n:0,t:0};
 const devHost=()=>location.host;
 
 function fetchOpts(opt){
@@ -824,13 +824,15 @@ function fetchOpts(opt){
 function api(path,opt){
   opt=Object.assign({},opt||{});
   const ms=opt.timeout||4000;
-  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
-  return fetch(path,Object.assign({signal:c.signal},fetchOpts(opt)))
+  const c=new AbortController();let t=0;
+  const timer=new Promise((_,rej)=>{t=setTimeout(()=>{try{c.abort();}catch(e){}rej(new Error('timeout'));},ms);});
+  const req=fetch(path,Object.assign({signal:c.signal},fetchOpts(opt)))
     .then(r=>r.text().then(tx=>{
       if(!r.ok){let m='http '+r.status;try{m=JSON.parse(tx).err||m;}catch(e){}
         throw Object.assign(new Error(m),{status:r.status});}
-      return tx?JSON.parse(tx):null;}))
-    .finally(()=>clearTimeout(t));
+      return tx?JSON.parse(tx):null;}));
+  req.catch(()=>{});
+  return Promise.race([req,timer]).finally(()=>clearTimeout(t));
 }
 /* One request that does not wait out a slow or lost first attempt: another starts after `gap`
    (up to `max`), and the first good answer wins. Only for calls that are safe to repeat. */
@@ -839,18 +841,22 @@ function hedged(path,opt){
   const gap=opt.gap||700,max=opt.max||3,each=opt.timeout||3500;
   delete opt.gap;delete opt.max;delete opt.timeout;
   return new Promise((resolve,reject)=>{
-    const ctl=[];let done=false,launched=0,pending=0,timer=0,last=null;
-    const finish=(ok,v)=>{if(done)return;done=true;clearTimeout(timer);
+    const ctl=[];let done=false,launched=0,pending=0,timer=0,hard=0,last=null;
+    const finish=(ok,v)=>{if(done)return;done=true;clearTimeout(timer);clearTimeout(hard);
       ctl.forEach(c=>{try{c.abort();}catch(e){}});ok?resolve(v):reject(v);};
+    hard=setTimeout(()=>finish(false,last||new Error('timeout')),each+gap*max+500);
     const next=()=>{if(done||launched>=max)return;start();timer=setTimeout(next,gap);};
     const start=()=>{
       launched++;pending++;
-      const c=new AbortController(),to=setTimeout(()=>c.abort(),each);ctl.push(c);
+      let settled=false;
+      const fail=e=>{if(settled||done)return;settled=true;last=e;pending--;
+        if(pending===0){clearTimeout(timer);if(launched>=max)finish(false,last);else next();}};
+      const c=new AbortController(),to=setTimeout(()=>{try{c.abort();}catch(e){}fail(new Error('timeout'));},each);
+      ctl.push(c);
       fetch(path,Object.assign({signal:c.signal},fetchOpts(opt)))
         .then(r=>{if(!r.ok)throw new Error('http '+r.status);return r.json();})
-        .then(v=>{clearTimeout(to);finish(true,v);})
-        .catch(e=>{clearTimeout(to);if(done)return;last=e;pending--;
-          if(pending===0){clearTimeout(timer);if(launched>=max)finish(false,last);else next();}});
+        .then(v=>{if(settled)return;settled=true;clearTimeout(to);finish(true,v);})
+        .catch(e=>{clearTimeout(to);fail(e);});
     };
     next();
   });
@@ -859,8 +865,12 @@ const apiQuiet=(p,o)=>api(p,o).catch(()=>null);
 /* The board answers one request at a time, and the scope / FFT / fold payloads are by far the
    biggest. Anything the user just did is counted here, and the measurement poller waits for it, so a
    button press is never stuck behind a 6 kB waveform. */
-const BUSY={n:0};
-function hiPri(pr){BUSY.n++;return pr.finally(()=>{BUSY.n--;});}
+const BUSY={n:0,since:0};
+function hiPri(pr){
+  if(BUSY.n<=0)BUSY.since=Date.now();
+  BUSY.n++;
+  return pr.finally(()=>{if(--BUSY.n<=0){BUSY.n=0;BUSY.since=0;}else BUSY.since=Date.now();});
+}
 
 /* ---- the header pill ---- */
 function linkLabel(){
@@ -897,27 +907,28 @@ async function devAttach(j){
   }
   connRender();
   renderState();
-  if(!DEV.polling){DEV.polling=true;pollKick();}
+  POLL.tickAt=Date.now();
+  pollKick();
 }
 async function devConnect(manual){
-  if(CONN.busy)return false;
+  if(CONN.busy&&Date.now()-CONN.since<=8000)return false;
   if(DEV.on&&!manual)return true;
-  CONN.busy=true;CONN.n++;
-  clearTimeout(CONN.t);
+  CONN.busy=true;CONN.since=Date.now();CONN.n++;
+  clearTimeout(CONN.t);CONN.t=0;
   connRender();
   let ok=false;
   try{
     const j=await hedged('/api/state');
     if(j&&j.app==='magneto'){await devAttach(j);ok=true;}
   }catch(e){}
-  CONN.busy=false;
-  if(!ok&&!DEV.on)CONN.t=setTimeout(()=>devConnect(false),Math.min(1200+CONN.n*600,5000));
+  CONN.busy=false;CONN.since=0;
+  if(!ok&&!DEV.on)CONN.t=setTimeout(()=>{CONN.t=0;devConnect(false);},Math.min(1200+CONN.n*600,5000));
   connRender();
   return ok;
 }
 function kick(){                                    /* page came back to the front, or a manual nudge */
   if(!DEV.on)devConnect(false);
-  else if(!DEV.polling){DEV.polling=true;pollKick();}
+  else pollWake(false);
   renderState();
 }
 
@@ -1220,7 +1231,7 @@ function drawChart(cv,opt){
   if(opt.zero&&lo>0)lo=0;
   const span=(hi-lo)||1;lo-=span*0.07;hi+=span*0.07;
   const st=chGet(cv);
-  if(opt.noSmooth||!Number.isFinite(st.y0)){
+  if(opt.noSmooth||!Number.isFinite(st.y0)||!Number.isFinite(st.y1)){
     st.y0=lo;st.y1=hi;
   }else{
     // Deadband: ordinary sample noise moves lo/hi a little on every single frame, and chasing all of
@@ -1422,62 +1433,121 @@ function tempRecord(s){
    built to fix. They now take turns through one chain instead - a state tick, then (only on the
    Measure tab) a measurement tick, alternating - so each stays roughly half as fresh running alone
    would give it, but neither ever queues behind the other. */
-let pollTimer=0, pollN=0;
-function pollKick(){ clearTimeout(pollTimer); pollN=0; pollTick(); }          // (re)start the loop fresh
-function measureKick(){ clearTimeout(pollTimer); pollN=1; pollTick(); renderMeasure(); }  // jump to a measurement turn
-async function pollTick(){
-  clearTimeout(pollTimer);
+const POLL={timer:0,inFlight:false,wake:false,wakeMeasure:false,n:0,gen:0,startedAt:0,tickAt:0};
+function pollWake(wantMeasure){
   if(!DEV.on){DEV.polling=false;return;}
-  const measuring=TAB==='measure'&&!document.hidden;
-  let wait=350;
-  if(document.hidden){
-    wait=2500;
-  }else if(BUSY.n>0){
-    wait=120;                          /* something the user just did is in flight: come back shortly */
-  }else if(!DEV.rebooting){
-    const n=pollN++;
-    if(measuring&&(n&1)){               // odd ticks: a measurement payload, in rotation
-      const kind=(n>>1)%4;              // wave, fold, wave, spec - the scope twice as often as the rest
-      try{
-        if(kind===0||kind===2){
-          if(!SCOPE.hold){
-            const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
-            if(r&&r.n)SCOPE.wave=r;
-          }
-          scopeDraw();
-          wait=SCOPE.ms>=3000?500:250;
-        }else if(kind===1){
-          SCOPE.fold=await apiQuiet('/api/fold');
-          foldDraw();
-        }else{
-          SCOPE.spec=await apiQuiet('/api/spec');
-          specDraw();
-        }
-      }catch(e){
-        /* a drawing bug must never be able to wedge the one poller /api/state rides on too */
-      }
-    }else{                              // even ticks, or off the Measure tab entirely: the device state
-      try{
-        const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
-        if(j&&j.app==='magneto'){
-          const was=ST;ST=j;
-          DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
-          clockBase={t:j.t,at:Date.now(),run:j.s==='run',total:j.total};
-          tempRecord(j);
-          if(j.rev&&cfgRev&&j.rev!==cfgRev&&!cfgPushing){cfgRev=j.rev;cfgPull();}
-          else if(j.rev&&!cfgRev)cfgRev=j.rev;
-          if(!was||was.s!==j.s)renderPresets();
-          connRender();
-        }
-      }catch(e){
-        /* a few misses are normal on a busy single-connection server; give up only after several */
-        if(++DEV.fails>=4){DEV.on=false;DEV.polling=false;connRender();devConnect(false);return;}
-      }
-      wait=DEV.fails?900:(measuring?250:350);
+  DEV.polling=true;
+  clearTimeout(POLL.timer);POLL.timer=0;
+  if(POLL.inFlight){
+    if(Date.now()-POLL.startedAt>6000){             /* request hung across sleep: supersede it */
+      POLL.gen++;
+      POLL.inFlight=false;
+    }else{
+      POLL.wake=true;
+      POLL.wakeMeasure=!!wantMeasure;
+      return;
     }
   }
+  POLL.wake=false;POLL.wakeMeasure=false;
+  POLL.n=wantMeasure?1:0;
+  pollTick();
+}
+function pollKick(){ pollWake(false); }             // (re)start the loop fresh with a state fetch
+function measureKick(){ if(DEV.on)pollWake(true); renderMeasure(); }  // jump to a measurement turn
+async function pollTick(){
+  clearTimeout(POLL.timer);POLL.timer=0;
+  if(!DEV.on){DEV.polling=false;POLL.inFlight=false;return;}
+  if(POLL.inFlight)return;
+  const myGen=++POLL.gen;
+  POLL.inFlight=true;
+  POLL.startedAt=Date.now();
+  const measuring=TAB==='measure'&&!document.hidden;
+  let wait=350;
+  try{
+    if(BUSY.n>0&&Date.now()-BUSY.since>6000){BUSY.n=0;BUSY.since=0;}
+    if(document.hidden){
+      wait=2500;
+    }else if(BUSY.n>0){
+      wait=120;                        /* something the user just did is in flight: come back shortly */
+    }else if(!DEV.rebooting){
+      const n=POLL.n++;
+      if(measuring&&(n&1)){             // odd ticks: a measurement payload, in rotation
+        const kind=(n>>1)%4;            // wave, fold, wave, spec - the scope twice as often as the rest
+        try{
+          if(kind===0||kind===2){
+            if(!SCOPE.hold){
+              const r=await apiQuiet('/api/wave?ch='+SCOPE.ch+'&ms='+SCOPE.ms);
+              if(myGen!==POLL.gen)return;
+              if(r&&r.n)SCOPE.wave=r;
+            }
+            scopeDraw();
+            wait=SCOPE.ms>=3000?500:250;
+          }else if(kind===1){
+            const f=await apiQuiet('/api/fold');
+            if(myGen!==POLL.gen)return;
+            SCOPE.fold=f;
+            foldDraw();
+          }else{
+            const sp=await apiQuiet('/api/spec');
+            if(myGen!==POLL.gen)return;
+            SCOPE.spec=sp;
+            specDraw();
+          }
+        }catch(e){
+          /* a drawing bug must never be able to wedge the one poller /api/state rides on too */
+        }
+      }else{                            // even ticks, or off the Measure tab entirely: the device state
+        try{
+          const j=await(DEV.fails?hedged('/api/state',{timeout:2500}):api('/api/state',{timeout:2500}));
+          if(myGen!==POLL.gen)return;
+          if(j&&j.app==='magneto'){
+            const was=ST;ST=j;
+            DEV.fails=0;DEV.net=j.net||'';DEV.fail=!!j.fail;
+            clockBase={t:j.t,at:Date.now(),run:j.s==='run',total:j.total};
+            tempRecord(j);
+            if(j.rev&&cfgRev&&j.rev!==cfgRev&&!cfgPushing){cfgRev=j.rev;cfgPull();}
+            else if(j.rev&&!cfgRev)cfgRev=j.rev;
+            if(!was||was.s!==j.s)renderPresets();
+            connRender();
+          }
+        }catch(e){
+          if(myGen!==POLL.gen)return;
+          /* a few misses are normal on a busy single-connection server; give up only after several */
+          if(++DEV.fails>=4){
+            DEV.on=false;DEV.polling=false;POLL.inFlight=false;
+            connRender();devConnect(false);return;
+          }
+        }
+        wait=DEV.fails?900:(measuring?250:350);
+      }
+    }
+  }finally{
+    if(myGen===POLL.gen)POLL.inFlight=false;
+  }
+  if(myGen!==POLL.gen||!DEV.on)return;
+  POLL.tickAt=Date.now();
   renderState();
-  pollTimer=setTimeout(pollTick,wait);
+  if(POLL.wake){
+    const wm=POLL.wakeMeasure;
+    POLL.wake=false;POLL.wakeMeasure=false;
+    POLL.n=wm?1:0;
+    wait=0;
+  }
+  POLL.timer=setTimeout(pollTick,wait);
+}
+function pollWatchdog(){
+  if(document.hidden||DEV.rebooting||UPD.busy)return;
+  const now=Date.now();
+  if(DEV.on){
+    const orphan=!DEV.polling||(!POLL.inFlight&&!POLL.timer);
+    const stalled=POLL.tickAt>0&&now-POLL.tickAt>6000&&(!POLL.inFlight||now-POLL.startedAt>6000);
+    if(orphan||stalled)pollWake(false);
+  }else if(!CONN.busy&&!CONN.t){
+    devConnect(false);
+  }else if(CONN.busy&&now-CONN.since>8000){
+    CONN.busy=false;
+    devConnect(false);
+  }
 }
 setInterval(()=>{if(clockBase.run)renderState();},500);
 
@@ -2722,10 +2792,13 @@ function fillAll(){
   slidersPaint();renderPlanInfo();renderPresets();
   MCACHE.key='';if(TAB==='coil')coilRecalc();
 }
-setInterval(()=>{if(TAB==='set')renderDevice();},1000);
+setInterval(()=>{pollWatchdog();if(TAB==='set')renderDevice();},1000);
 setInterval(()=>{if(TAB==='set'&&DEV.on&&!NET)netRefresh();},1500);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)kick();});
 addEventListener('pageshow',kick);
+addEventListener('focus',()=>{if(!document.hidden)kick();});
+addEventListener('online',kick);
+$('#connPill').onclick=()=>kick();
 addEventListener('resize',debounce(()=>{if(TAB==='coil')coilRecalc();if(TAB==='measure'){scopeDraw();foldDraw();specDraw();}},200));
 /* The Measure tab's three live charts redraw every animation frame instead of only when a fetch
    lands - a real autoscale move then glides over several frames instead of jumping once per poll,
