@@ -62,12 +62,109 @@ inline Biquad notchCoeffs(float f0, float fs, float q) {
 }
 
 inline float biquadStep(const Biquad& c, BiquadState& s, float x) {
+  if (!isfinite(x)) return 0.f;
   float y = c.b0 * x + c.b1 * s.x1 + c.b2 * s.x2 - c.a1 * s.y1 - c.a2 * s.y2;
+  if (!isfinite(y)) {
+    s = BiquadState{};
+    return 0.f;
+  }
   s.x2 = s.x1;
   s.x1 = x;
   s.y2 = s.y1;
   s.y1 = y;
   return y;
 }
+
+inline float emaStep(float cur, float x, float alpha) {
+  if (!isfinite(x)) return isfinite(cur) ? cur : 0.f;
+  if (!isfinite(cur)) return x;
+  float next = cur + alpha * (x - cur);
+  return isfinite(next) ? next : x;
+}
+
+// ---- ADC stream health & staleness guard -------------------------------------------------------
+// ESP32-S3 continuous ADC DMA (IDF 4.4 / arduino-esp32 2.0.17) can stop delivering frames after a
+// long SPI-flash erase (non-IRAM GDMA ISR + descriptor wraparound) or a Wi-Fi RF/PHY calibration
+// touch on SAR_I2C. SenseWatch detects a silent ringbuffer timeout within SENSE_STALL_MS, tries a
+// zero-allocation stop/start bounce first, escalates to a full re-init if bounces do not recover
+// data, and invalidates thermistor readings if no fresh window arrives within SENSE_STALE_MS.
+static const uint32_t SENSE_STALL_MS = 200;
+static const uint32_t SENSE_STALE_MS = 1500;
+static const uint8_t SENSE_MAX_BOUNCES = 3;
+
+enum SenseAct {
+  SENSE_ACT_NONE = 0,
+  SENSE_ACT_BOUNCE = 1,
+  SENSE_ACT_REINIT = 2,
+};
+
+struct SenseWatch {
+  uint32_t lastDataMs = 0;
+  uint32_t lastAttemptMs = 0;
+  uint32_t thGoodMs[2] = {0, 0};
+  bool thEverOk[2] = {false, false};
+  uint8_t bounces = 0;
+  uint8_t badReads = 0;
+
+  void reset(uint32_t nowMs) {
+    lastDataMs = nowMs;
+    lastAttemptMs = nowMs;
+    bounces = 0;
+    badReads = 0;
+  }
+
+  void onData(uint32_t nowMs) {
+    lastDataMs = nowMs;
+    bounces = 0;
+    badReads = 0;
+  }
+
+  SenseAct nextRecovery(uint32_t nowMs) {
+    lastAttemptMs = nowMs;
+    badReads = 0;
+    if (bounces < SENSE_MAX_BOUNCES) {
+      bounces++;
+      return SENSE_ACT_BOUNCE;
+    }
+    bounces = 0;
+    return SENSE_ACT_REINIT;
+  }
+
+  SenseAct onReadErr(uint32_t nowMs) {
+    if (++badReads >= 8) return nextRecovery(nowMs);
+    return SENSE_ACT_NONE;
+  }
+
+  SenseAct checkStall(uint32_t nowMs) {
+    if ((uint32_t)(nowMs - lastDataMs) < SENSE_STALL_MS) return SENSE_ACT_NONE;
+    if ((uint32_t)(nowMs - lastAttemptMs) < SENSE_STALL_MS) return SENSE_ACT_NONE;
+    return nextRecovery(nowMs);
+  }
+
+  bool stalled(uint32_t nowMs) const {
+    return (uint32_t)(nowMs - lastDataMs) >= SENSE_STALE_MS;
+  }
+
+  void thermWindow(int ch, uint32_t nowMs, bool hasSamples, bool probeOk, float sampleF,
+                   float& tempF, bool& okOut) {
+    if (ch < 0 || ch > 1) return;
+    if (hasSamples) {
+      if (probeOk && isfinite(sampleF)) {
+        tempF = isfinite(tempF) ? tempF + 0.3f * (sampleF - tempF) : sampleF;
+        okOut = true;
+        thGoodMs[ch] = nowMs;
+        thEverOk[ch] = true;
+      } else {
+        okOut = false;
+        tempF = NAN;
+      }
+      return;
+    }
+    if (!thEverOk[ch] || !okOut || (uint32_t)(nowMs - thGoodMs[ch]) >= SENSE_STALE_MS) {
+      okOut = false;
+      tempF = NAN;
+    }
+  }
+};
 
 }  // namespace mg

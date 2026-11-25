@@ -5,6 +5,7 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 #include <math.h>
+#include <soc/sens_struct.h>
 #include <string.h>
 
 #include "coil.h"
@@ -41,7 +42,9 @@ static int sChan[4] = {0, 1, 2, 3};
 static bool sAdcUp = false;
 static volatile bool sHold = false;
 static volatile bool sRestart = false;
+static volatile bool sBounce = false;
 static float sLut[257];
+static mg::SenseWatch sWatch;
 
 // hall processing
 static float sVz[2] = {1.65f, 1.65f};
@@ -90,7 +93,8 @@ static int sSpecN = 0;
 static int sSpecNPrev = 0;   // bin count last published; averaging resets if this changes
 static float sSpecDf = 0;
 static float sPkHz = 0, sPkAmp = 0, sPkSnr = 0;
-static float sProcHz = 0;                  // measured processed rate per hall channel
+static float sProcHz = 0;                  // nominal/filter rate per hall channel (kept > 0 while configured)
+static float sMeasHz = 0;                  // live measured rate per hall channel (0 when stalled)
 static uint32_t sRate[4] = {0, 0, 0, 0};
 static uint32_t sRateT0 = 0;
 
@@ -141,6 +145,18 @@ static float thermF(int which, float volts, bool* ok) {
 }
 
 // ---- ADC bring-up -----------------------------------------------------------------------------------------------------
+static void recomputeNotch() {
+  sNotchCoef = sFilt.notch ? mg::notchCoeffs((float)sFilt.notchHz, sProcHz, 12.f) : mg::Biquad{1.f, 0.f, 0.f, 0.f, 0.f};
+}
+
+// ESP-IDF 4.4's sar_periph_ctrl_power_enable() (called from Wi-Fi / PM / PHY paths) resets
+// force_xpd_sar back to FSM mode even while continuous ADC holds a power reference, and a subsequent
+// stop/start with s_sar_power_on_cnt > 1 does not restore SAR_CTRL_LL_POWER_ON. Force it explicitly.
+static inline void forceSarPowerOn() {
+  SENS.sar_peri_clk_gate_conf.saradc_clk_en = 1;
+  SENS.sar_power_xpd_sar.force_xpd_sar = 0x3;
+}
+
 static void adcStop() {
   if (!sAdcUp) return;
   adc_digi_stop();
@@ -162,15 +178,20 @@ static bool adcStart() {
     mask |= 1u << sChan[i];
   }
   for (uint32_t hz : kAdcTry) {
-    adc_digi_init_config_t init = {};
-    init.max_store_buf_size = 32768;
-    init.conv_num_each_intr = 1024;
-    init.adc1_chan_mask = mask;
-    init.adc2_chan_mask = 0;
-    esp_err_t err = adc_digi_initialize(&init);
-    if (err != ESP_OK) {
-      init.max_store_buf_size = 4096;
-      init.conv_num_each_intr = 256;
+    // Size each GDMA descriptor near the 4092-byte single-descriptor limit (~12.8 ms per EOF across
+    // all rate steps, always a multiple of the 16-byte 4-channel scan) so the 5-descriptor hardware
+    // ring spans ~64 ms instead of 16 ms and rides through normal SPI-flash writes without stalling.
+    const uint32_t fullFrame = hz >= 80000 ? 4080 : (hz >= 60000 ? 3072 : (hz >= 40000 ? 2048 : 1024));
+    const uint32_t midFrame = fullFrame > 2048 ? 2048 : fullFrame;
+    const uint32_t storeTry[3] = {16384, 8192, 4096};
+    const uint32_t frameTry[3] = {fullFrame, midFrame, 1024};
+    esp_err_t err = ESP_ERR_NO_MEM;
+    for (int tier = 0; tier < 3 && err != ESP_OK; tier++) {
+      adc_digi_init_config_t init = {};
+      init.max_store_buf_size = storeTry[tier];
+      init.conv_num_each_intr = frameTry[tier];
+      init.adc1_chan_mask = mask;
+      init.adc2_chan_mask = 0;
       err = adc_digi_initialize(&init);
     }
     if (err != ESP_OK) continue;
@@ -192,13 +213,34 @@ static bool adcStart() {
     dig.format = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
     if (adc_digi_controller_configure(&dig) != ESP_OK) { adc_digi_deinitialize(); continue; }
     if (adc_digi_start() != ESP_OK) { adc_digi_deinitialize(); continue; }
+    forceSarPowerOn();
     sAdcUp = true;
     sProcHz = (float)hz / 4.f / (float)kDecim;   // refined by measurement every second
+    sMeasHz = sProcHz;
+    recomputeNotch();
     Serial.printf("sense: ADC dma %u Hz total, ~%.0f Hz per hall channel\n", hz, sProcHz);
     return true;
   }
   Serial.println("sense: ADC did not start");
   return false;
+}
+
+// Re-arm APB_SARADC and its GDMA descriptor ring in place without freeing or re-allocating DMA /
+// ringbuffer RAM: clears IDF 4.4's sticky ringbuf_overflow_flag, restores descriptor ownership after
+// a flash-erase stall, and re-applies SAR power/clock settings after Wi-Fi PHY calibration.
+static bool adcBounce() {
+  if (!sAdcUp) return adcStart();
+  adc_digi_stop();
+  static uint8_t drain[512];
+  uint32_t got = 0;
+  while (adc_digi_read_bytes(drain, sizeof drain, &got, 0) != ESP_ERR_TIMEOUT && got > 0) {}
+  if (adc_digi_start() != ESP_OK) {
+    adc_digi_deinitialize();
+    sAdcUp = false;
+    return adcStart();
+  }
+  forceSarPowerOn();
+  return true;
 }
 
 // ---- per-processed-sample work (runs ~10 kHz, keep it lean) -----------------------------------------------------------
@@ -219,16 +261,16 @@ static inline void statsAndRings(float b0, float b1, int64_t tUs) {
   if (sProcIdx > (uint32_t)kDiffK && sProcHz > 1.f) {
     float d = (b0 - prev) * (sProcHz / (float)kDiffK) * 1e-3f;   // µT/s -> mT/s
     float a = mg::emaAlpha(mg::filtDbHz(sFilt.mode), sProcHz);
-    sDbf += a * (d - sDbf);
+    sDbf = mg::emaStep(sDbf, d, a);
     sDb = d;
   }
   // display smoothing (mode 0 is exactly the fixed 300 Hz this always used)
   float af = mg::emaAlpha(mg::filtFieldHz(sFilt.mode), sProcHz);
-  sBf[0] += af * (b0 - sBf[0]);
-  sBf[1] += af * (b1 - sBf[1]);
+  sBf[0] = mg::emaStep(sBf[0], b0, af);
+  sBf[1] = mg::emaStep(sBf[1], b1, af);
 
   // stats, held off briefly after a zero / pin / cal change so the step never latches as a peak
-  if (sProcIdx >= sHoldoff) {
+  if (sProcIdx >= sHoldoff && isfinite(b0) && isfinite(b1) && isfinite(sDbf)) {
     float a0 = fabsf(b0), a1 = fabsf(b1), ad = fabsf(sDbf);
     if (a0 > sBMax[0]) sBMax[0] = a0;
     if (a1 > sBMax[1]) sBMax[1] = a1;
@@ -292,8 +334,8 @@ static void publishSnap() {
   s.v0 = sVz[0] + sBf[0] / 100.f * sensVperG(0);
   s.v1 = sVz[1] + sBf[1] / 100.f * sensVperG(1);
   s.zeroed0 = sZeroed[0]; s.zeroed1 = sZeroed[1];
-  s.clip = sClip && (now - sClipAt) < 200;
-  s.fs = sProcHz;
+  s.clip = sClip && (uint32_t)(now - sClipAt) < 200;
+  s.fs = sWatch.stalled(now) ? 0.f : sMeasHz;
   s.tC = sTempF[0]; s.tF = sTempF[1];
   s.dtdtC = sDtdt[0]; s.dtdtF = sDtdt[1];
   s.okC = sThOk[0]; s.okF = sThOk[1];
@@ -307,17 +349,20 @@ static void publishSnap() {
 
 static void thermWindow(uint32_t now) {
   for (int t = 0; t < 2; t++) {
+    bool hasSamples = sThN[t] > 10;
     bool ok = false;
     float f = NAN;
-    if (sThN[t] > 10) f = thermF(t, (float)(sThSum[t] / sThN[t]), &ok);
+    if (hasSamples) f = thermF(t, (float)(sThSum[t] / sThN[t]), &ok);
     sThSum[t] = 0;
     sThN[t] = 0;
-    sThOk[t] = ok;
-    if (ok) sTempF[t] = isnan(sTempF[t]) ? f : sTempF[t] + 0.3f * (f - sTempF[t]);
-    else sTempF[t] = NAN;
+    sWatch.thermWindow(t, now, hasSamples, ok, f, sTempF[t], sThOk[t]);
+    if (!sThOk[t]) {
+      sThHistN[t] = 0;
+      sDtdt[t] = 0;
+    }
   }
   // 1 Hz history for the rate of change
-  if (now - sThHistAt >= 1000) {
+  if ((uint32_t)(now - sThHistAt) >= 1000) {
     sThHistAt = now;
     for (int t = 0; t < 2; t++) {
       if (!sThOk[t]) { sThHistN[t] = 0; sDtdt[t] = 0; continue; }
@@ -337,13 +382,6 @@ static void thermWindow(uint32_t now) {
       }
     }
   }
-}
-
-// Notch coefficients depend on the sample rate, which the task itself measures and refines once a
-// second (sProcHz below) - so this gets called both when the filter setting changes and whenever
-// that measurement updates, and is cheap enough (a handful of trig calls) to not matter at 1 Hz.
-static void recomputeNotch() {
-  sNotchCoef = sFilt.notch ? mg::notchCoeffs((float)sFilt.notchHz, sProcHz, 12.f) : mg::Biquad{1.f, 0.f, 0.f, 0.f, 0.f};
 }
 
 static void applyPendingCommands() {
@@ -373,6 +411,7 @@ static void applyPendingCommands() {
       sPrefs.putBool(i ? "z1" : "z0", false);
     }
     sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
+    sBounce = true;
   }
   uint8_t clr = sClearBits;
   if (clr) {
@@ -383,104 +422,161 @@ static void applyPendingCommands() {
 }
 
 static void senseTask(void*) {
-  static uint8_t buf[2048];
+  static uint8_t buf[4096];
   double sumV[2] = {0, 0};
   int nDec[2] = {0, 0};
   bool clipRun = false;
-  int badRun = 0;
-  sRateT0 = millis();
-  sStatT0 = millis();
+  uint32_t bootMs = millis();
+  sWatch.reset(bootMs);
+  sRateT0 = bootMs;
+  sStatT0 = bootMs;
+  sThWinAt = bootMs;
   for (;;) {
-    if (sHold) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
+    if (sHold) {
+      uint32_t ms = millis();
+      sWatch.reset(ms);
+      sRateT0 = ms;
+      sThWinAt = ms;
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
     if (sRestart || !sAdcUp) {
       sRestart = false;
+      sBounce = false;
+      sumV[0] = sumV[1] = 0;
+      nDec[0] = nDec[1] = 0;
       adcStart();
-      if (!sAdcUp) { vTaskDelay(pdMS_TO_TICKS(500)); continue; }
+      uint32_t ms = millis();
+      sWatch.lastAttemptMs = ms;
+      if (!sAdcUp) {
+        sMeasHz = 0;
+        thermWindow(ms);
+        publishSnap();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        continue;
+      }
+    }
+    if (sBounce) {
+      sBounce = false;
+      sumV[0] = sumV[1] = 0;
+      nDec[0] = nDec[1] = 0;
+      if (!adcBounce()) {
+        sMeasHz = 0;
+        thermWindow(millis());
+        publishSnap();
+        vTaskDelay(pdMS_TO_TICKS(200));
+        continue;
+      }
+      sWatch.lastAttemptMs = millis();
     }
     applyPendingCommands();
 
     uint32_t n = 0;
-    esp_err_t err = adc_digi_read_bytes(buf, sizeof buf, &n, 10);
-    if (err == ESP_ERR_TIMEOUT) { publishSnap(); continue; }
-    if (err != ESP_OK) {
-      if (++badRun > 40) { sRestart = true; badRun = 0; }
-      continue;
+    esp_err_t err = adc_digi_read_bytes(buf, sizeof buf, &n, 15);
+    bool haveData = (err == ESP_OK || err == ESP_ERR_INVALID_STATE) && n >= sizeof(adc_digi_output_data_t);
+    if (err == ESP_ERR_INVALID_STATE) {
+      // IDF 4.4 keeps ringbuf_overflow_flag latched until adc_digi_start() runs again, even while
+      // copying valid bytes into buf. Consume what arrived, then soft-bounce on the next pass.
+      sBounce = true;
     }
-    badRun = 0;
 
-    int64_t tEnd = esp_timer_get_time();
-    // samples in this block per hall channel, for per-sample time reconstruction in the fold
-    int hallInBlock = 0;
-    for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
-      const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
-      if (p->type2.channel == (uint32_t)sChan[0]) hallInBlock++;
-    }
-    int hallSeen = 0;
-
-    for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
-      const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
-      int raw = (int)p->type2.data;
-      if (raw < 0 || raw > 4095) continue;
-      int ch = (int)p->type2.channel;
-      int slot = -1;
-      for (int k = 0; k < 4; k++) if (sChan[k] == ch) { slot = k; break; }
-      if (slot < 0) continue;
-      sRate[slot]++;
-      float volts = lutVolts(raw);
-
-      if (slot >= 2) {                                   // thermistor: just accumulate
-        sThSum[slot - 2] += volts;
-        sThN[slot - 2]++;
-        continue;
+    if (haveData) {
+      int64_t tEnd = esp_timer_get_time();
+      // samples in this block per hall channel, for per-sample time reconstruction in the fold
+      int hallInBlock = 0;
+      for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
+        const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
+        if (p->type2.channel == (uint32_t)sChan[0]) hallInBlock++;
       }
+      int hallSeen = 0;
+      int validSamples = 0;
 
-      // hall channel
-      if (raw <= 1 || raw >= 4094) clipRun = true;
-      int h = slot;
-      if (h == 0) hallSeen++;
-      if (sZeroArm & (1 << h)) {
-        sZeroSum[h] += volts;
-        sZeroN[h]++;
-        if (sZeroN[h] >= (uint32_t)(sProcHz * kDecim * ZERO_SEC)) {
-          sVz[h] = (float)(sZeroSum[h] / sZeroN[h]);
-          sZeroed[h] = true;
-          sZeroArm &= ~(1 << h);
-          sPrefs.putFloat(h ? "vz1" : "vz0", sVz[h]);
-          sPrefs.putBool(h ? "z1" : "z0", true);
-          sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
+      for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n; i += sizeof(adc_digi_output_data_t)) {
+        const adc_digi_output_data_t* p = (const adc_digi_output_data_t*)&buf[i];
+        int raw = (int)p->type2.data;
+        if (raw < 0 || raw > 4095) continue;
+        int ch = (int)p->type2.channel;
+        int slot = -1;
+        for (int k = 0; k < 4; k++) if (sChan[k] == ch) { slot = k; break; }
+        if (slot < 0) continue;
+        validSamples++;
+        sRate[slot]++;
+        float volts = lutVolts(raw);
+
+        if (slot >= 2) {                                   // thermistor: just accumulate
+          sThSum[slot - 2] += volts;
+          sThN[slot - 2]++;
+          continue;
         }
-      }
-      sumV[h] += volts;
-      if (++nDec[h] >= kDecim) {
-        float b = hallUt(h, (float)(sumV[h] / nDec[h]));
-        if (sFilt.notch) b = mg::biquadStep(sNotchCoef, sNotchSt[h], b);
-        sumV[h] = 0;
-        nDec[h] = 0;
-        if (h == 0) {
-          sB[0] = b;
-          // reconstruct this sample's time from its place in the block
-          int64_t tS = tEnd;
-          if (sProcHz > 1.f && hallInBlock > 0) {
-            tS -= (int64_t)((double)(hallInBlock - hallSeen) / (sProcHz * kDecim) * 1e6);
+
+        // hall channel
+        if (raw <= 1 || raw >= 4094) clipRun = true;
+        int h = slot;
+        if (h == 0) hallSeen++;
+        if (sZeroArm & (1 << h)) {
+          sZeroSum[h] += volts;
+          sZeroN[h]++;
+          uint32_t need = (uint32_t)(sProcHz * kDecim * ZERO_SEC);
+          if (need < 16) need = 16;
+          if (sZeroN[h] >= need) {
+            sVz[h] = (float)(sZeroSum[h] / sZeroN[h]);
+            sZeroed[h] = true;
+            sZeroArm &= ~(1 << h);
+            sPrefs.putFloat(h ? "vz1" : "vz0", sVz[h]);
+            sPrefs.putBool(h ? "z1" : "z0", true);
+            sHoldoff = sProcIdx + (uint32_t)(sProcHz * ZERO_SEC);
+            sBounce = true;
           }
-          statsAndRings(sB[0], sB[1], tS);
-        } else {
-          sB[1] = b;
+        }
+        sumV[h] += volts;
+        if (++nDec[h] >= kDecim) {
+          float b = hallUt(h, (float)(sumV[h] / nDec[h]));
+          if (sFilt.notch) b = mg::biquadStep(sNotchCoef, sNotchSt[h], b);
+          sumV[h] = 0;
+          nDec[h] = 0;
+          if (h == 0) {
+            sB[0] = b;
+            // reconstruct this sample's time from its place in the block
+            int64_t tS = tEnd;
+            if (sProcHz > 1.f && hallInBlock > 0) {
+              tS -= (int64_t)((double)(hallInBlock - hallSeen) / (sProcHz * kDecim) * 1e6);
+            }
+            statsAndRings(sB[0], sB[1], tS);
+          } else {
+            sB[1] = b;
+          }
         }
       }
+      if (validSamples > 0) sWatch.onData(millis());
+      if (clipRun) { sClip = true; sClipAt = millis(); clipRun = false; }
+    } else if (err != ESP_ERR_TIMEOUT) {
+      mg::SenseAct act = sWatch.onReadErr(millis());
+      if (act == mg::SENSE_ACT_BOUNCE) sBounce = true;
+      else if (act == mg::SENSE_ACT_REINIT) sRestart = true;
     }
-    if (clipRun) { sClip = true; sClipAt = millis(); clipRun = false; }
 
     uint32_t now = millis();
-    if (now - sThWinAt >= 250) { sThWinAt = now; thermWindow(now); }
-    if (now - sRateT0 >= 1000) {
-      if (sRate[0] > 0) sProcHz = (float)sRate[0] * 1000.f / (float)(now - sRateT0) / (float)kDecim;
+    mg::SenseAct stallAct = sWatch.checkStall(now);
+    if (stallAct == mg::SENSE_ACT_BOUNCE) {
+      Serial.println("sense: ADC DMA stalled, bouncing");
+      sBounce = true;
+    } else if (stallAct == mg::SENSE_ACT_REINIT) {
+      Serial.println("sense: ADC DMA stalled repeatedly, reinitializing");
+      sRestart = true;
+    }
+    if ((uint32_t)(now - sThWinAt) >= 250) { sThWinAt = now; thermWindow(now); }
+    if ((uint32_t)(now - sRateT0) >= 1000) {
+      float dtMs = (float)(uint32_t)(now - sRateT0);
+      sMeasHz = dtMs > 0.f ? (float)sRate[0] * 1000.f / dtMs / (float)kDecim : 0.f;
+      if (sRate[0] > 0) {
+        sProcHz = sMeasHz;
+        recomputeNotch();       // coefficients depend on sProcHz, which just moved
+      }
       sRate[0] = sRate[1] = sRate[2] = sRate[3] = 0;
       sRateT0 = now;
-      recomputeNotch();         // coefficients depend on sProcHz, which just moved
     }
     static uint32_t pubAt = 0;
-    if (now - pubAt >= 50) { pubAt = now; publishSnap(); }
+    if ((uint32_t)(now - pubAt) >= 50) { pubAt = now; publishSnap(); }
   }
 }
 
@@ -549,6 +645,12 @@ bool senseBegin(int hallC, int hallP, int thC, int thF) {
   sVz[1] = sPrefs.getFloat("vz1", sCal.vcc * 0.5f);
   sZeroed[0] = sPrefs.getBool("z0", false);
   sZeroed[1] = sPrefs.getBool("z1", false);
+  for (int i = 0; i < 2; i++) {
+    if (!isfinite(sVz[i]) || sVz[i] < 0.05f || sVz[i] > 3.5f) {
+      sVz[i] = sCal.vcc * 0.5f;
+      sZeroed[i] = false;
+    }
+  }
 
   // Buffer budget. With PSRAM the scope keeps minutes of history and the FFT runs 4096 points.
   // Without it every byte competes with Wi-Fi and the TLS server in internal RAM, so the rings
@@ -672,6 +774,14 @@ int senseFftPoints() { return sFftN; }
 
 void senseHold(bool hold) {
   sHold = hold;
-  if (hold) adcStop();
-  else sRestart = true;
+  if (hold) {
+    sBounce = false;
+    adcStop();
+  } else {
+    sRestart = true;
+  }
+}
+
+void senseBounce() {
+  if (sTask && !sHold) sBounce = true;
 }

@@ -139,14 +139,18 @@ static void applyFilt() {
   senseSetFilt(filt);
 }
 
-static void applyHardware() {
-  ledsApply(cfg.pins);
-  coilInit(cfg.pins.drive);
+static void applySense() {
   senseBegin(cfg.pins.hallC, cfg.pins.hallP, cfg.pins.thC, cfg.pins.thF);
   SenseCal cal{cfg.hall.sens5c, cfg.hall.sens5p, cfg.hall.vcc, cfg.hall.ratio,
                cfg.therm.beta, cfg.therm.r0k, cfg.therm.rsk, cfg.therm.top};
   senseSetCal(cal);
   applyFilt();
+}
+
+static void applyHardware() {
+  ledsApply(cfg.pins);
+  coilInit(cfg.pins.drive);
+  applySense();
 }
 
 // ---- LED task: 250 Hz --------------------------------------------------------------------------------------------
@@ -190,6 +194,7 @@ static void ledTask(void*) {
 static void cfgSaveNow() {
   prefs.putBytes("cfg", cfgRaw.c_str(), cfgRaw.length());
   cfgDirty = false;
+  senseBounce();
 }
 
 static void cfgLoad() {
@@ -487,6 +492,7 @@ static void handlePresetsPost() {
   if (w != n) { LittleFS.remove("/presets.tmp"); sendJson(500, "{\"ok\":false}"); return; }
   LittleFS.remove("/presets.json");
   LittleFS.rename("/presets.tmp", "/presets.json");
+  senseBounce();
   lastApiMs = millis();
   sendJson(200, "{\"ok\":true}");
 }
@@ -894,6 +900,7 @@ static void toAp(const char* why) {
   apWhy = why;
   startAp();
   gotIpFlag = false;
+  senseBounce();
 }
 
 // On a local network: ask the driver to reconnect when the link drops, and if the network simply is
@@ -908,7 +915,7 @@ static void staWatch() {
   if (WiFi.status() == WL_CONNECTED) { downSince = 0; return; }
   if (!downSince) { downSince = now ? now : 1; lastTry = now; return; }
   if ((uint32_t)(now - downSince) > STA_LOST_MS) { downSince = 0; toAp("gone"); return; }
-  if ((uint32_t)(now - lastTry) > 8000) { WiFi.reconnect(); lastTry = now; }
+  if ((uint32_t)(now - lastTry) > 8000) { WiFi.reconnect(); senseBounce(); lastTry = now; }
 }
 
 static void mdnsPoke() {
@@ -1075,7 +1082,11 @@ void setup() {
     for (const char* f : stale) if (LittleFS.exists(f)) { LittleFS.remove(f); Serial.printf("removed stale %s\n", f); }
   }
   cfgLoad();
-  applyHardware();
+  // Claim the MOSFET gate (forced low) and status LEDs before Wi-Fi starts, so the coil stays parked
+  // and the LEDs can show join progress; start continuous ADC DMA right after Wi-Fi bring-up so
+  // esp_wifi_start() RF/PHY calibration cannot clobber SARADC / SAR_I2C mid-stream (IDFGH-11635).
+  ledsApply(cfg.pins);
+  coilInit(cfg.pins.drive);
 
   // a latched trip survives the reboot; the page explains and offers the reset
   uint8_t latched = prefs.getUChar("trip", 0);
@@ -1103,6 +1114,7 @@ void setup() {
   if (!radioSta) startAp();
   else if (MDNS.begin(HOST_NAME)) MDNS.addService("http", "tcp", 80);
   mdnsPokeAt = millis() + MDNS_POKE_MS;
+  applySense();
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/app", HTTP_GET, handleRoot);
@@ -1148,6 +1160,7 @@ void loop() {
   staWatch();
   safetyAndDrive();
   if (radioSta && (gotIpFlag || (int32_t)(millis() - mdnsPokeAt) >= 0)) {
+    if (gotIpFlag) senseBounce();
     gotIpFlag = false;
     mdnsPokeAt = millis() + MDNS_POKE_MS;
     mdnsPoke();

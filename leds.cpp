@@ -139,7 +139,9 @@ void ledsRender(const mg::Config& cfg, const LedInput& in, int64_t nowUs) {
     // the slow fade pulsate: one gentle swell every 3 s, never frequency-coupled
     float env = 0.38f + 0.42f * (0.5f - 0.5f * cosf((float)(ms % 3000) / 3000.f * mg::TAU_F));
     if (cfg.led.mode == 2) {
-      float t = (in.dataVal - cfg.led.dataMin) / (cfg.led.dataMax - cfg.led.dataMin + 1e-6f);
+      float t = isfinite(in.dataVal)
+                  ? (in.dataVal - cfg.led.dataMin) / (cfg.led.dataMax - cfg.led.dataMin + 1e-6f)
+                  : 0.f;
       c = heatColor(t);
     } else if (cfg.led.mode == 1) {
       if (cfg.plan.n > 1 && in.stage >= 0) c = cfg.plan.st[in.stage].col;
