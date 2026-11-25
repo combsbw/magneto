@@ -258,6 +258,75 @@ static void testFilt() {
     CHECK(rmsAt(f0) < 0.1);           // the notch frequency itself is strongly attenuated
     CHECK(rmsAt(200.f) > 0.85);       // well clear of the notch: passed through close to untouched
   }
+
+  // NaN / Inf inputs must never poison the biquad or EMA smoothers permanently
+  mg::Biquad c60 = mg::notchCoeffs(60.f, 8000.f, 12.f);
+  mg::BiquadState nst;
+  CHECK(mg::biquadStep(c60, nst, NAN) == 0.f);
+  CHECK(std::isfinite(mg::biquadStep(c60, nst, 42.f)));
+  nst.y1 = NAN;
+  CHECK(mg::biquadStep(c60, nst, 10.f) == 0.f);
+  CHECK(std::isfinite(mg::biquadStep(c60, nst, 10.f)));
+
+  CHECK(near(mg::emaStep(NAN, 25.f, 0.2f), 25.f));
+  CHECK(near(mg::emaStep(25.f, NAN, 0.2f), 25.f));
+  CHECK(near(mg::emaStep(0.f, 100.f, 0.25f), 25.f));
+}
+
+// Continuous ADC DMA stall recovery and stale-sensor fail-safe: a silent timeout stream must bounce
+// the controller within SENSE_STALL_MS, escalate to full re-init if bounces fail, hold thermistors
+// steady across a brief bounce, and fail safe to "no probe" if no fresh data arrives for >= 1.5 s.
+static void testSenseWatch() {
+  mg::SenseWatch w;
+  w.reset(1000);
+  CHECK(w.checkStall(1100) == mg::SENSE_ACT_NONE);
+  w.onData(1150);
+  CHECK(w.checkStall(1300) == mg::SENSE_ACT_NONE);
+
+  // Stall starts after t=1150: three soft bounces, then a full re-init on the fourth timeout window
+  CHECK(w.checkStall(1350) == mg::SENSE_ACT_BOUNCE);
+  CHECK(w.checkStall(1450) == mg::SENSE_ACT_NONE);     // rate-limited while the bounce settles
+  CHECK(w.checkStall(1550) == mg::SENSE_ACT_BOUNCE);
+  CHECK(w.checkStall(1750) == mg::SENSE_ACT_BOUNCE);
+  CHECK(w.checkStall(1950) == mg::SENSE_ACT_REINIT);
+  CHECK(!w.stalled(2600));
+  CHECK(w.stalled(2650));                              // >= 1500 ms since last good data
+
+  // Data returning clears the bounce escalation counter immediately
+  w.onData(2700);
+  CHECK(!w.stalled(2700));
+  CHECK(w.bounces == 0);
+  CHECK(w.checkStall(2900) == mg::SENSE_ACT_BOUNCE);
+
+  // Thermistor window: boot with dead DMA stays unready (ok == false, NAN)
+  mg::SenseWatch tw;
+  tw.reset(0);
+  float tF = NAN;
+  bool ok = false;
+  tw.thermWindow(0, 250, false, false, NAN, tF, ok);
+  CHECK(!ok && std::isnan(tF));
+
+  // Valid thermistor windows smooth normally
+  tw.thermWindow(0, 500, true, true, 78.f, tF, ok);
+  CHECK(ok && near(tF, 78.f));
+  tw.thermWindow(0, 750, true, true, 88.f, tF, ok);
+  CHECK(ok && near(tF, 81.f));
+
+  // A brief 1-2 bin DMA dropout during an NVS erase + bounce keeps the reading alive (no false trip)
+  tw.thermWindow(0, 1000, false, false, NAN, tF, ok);
+  CHECK(ok && near(tF, 81.f));
+  tw.thermWindow(0, 1500, false, false, NAN, tF, ok);
+  CHECK(ok && near(tF, 81.f));
+
+  // If DMA still has not delivered thermistor samples after SENSE_STALE_MS (1500 ms), fail safe!
+  tw.thermWindow(0, 2250, false, false, NAN, tF, ok);
+  CHECK(!ok && std::isnan(tF));
+
+  // Recovery when samples come back, and immediate (250 ms) invalidation on a real open probe
+  tw.thermWindow(0, 2500, true, true, 82.f, tF, ok);
+  CHECK(ok && near(tF, 82.f));
+  tw.thermWindow(0, 2750, true, false, NAN, tF, ok);
+  CHECK(!ok && std::isnan(tF));
 }
 
 static void testGh() {
@@ -362,6 +431,7 @@ int main() {
   testEngine();
   testConfig();
   testFilt();
+  testSenseWatch();
   testGh();
   if (failures) {
     printf("%d failure(s)\n", failures);
