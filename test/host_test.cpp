@@ -10,6 +10,8 @@
 #include "../filt.h"
 #include "../ghupdate.h"
 #include "../netprobe.h"
+#include "../safety.h"
+#include "../sclock.h"
 #include <cmath>
 #include <initializer_list>
 
@@ -276,6 +278,142 @@ static void testFilt() {
 // Continuous ADC DMA stall recovery and stale-sensor fail-safe: a silent timeout stream must bounce
 // the controller within SENSE_STALL_MS, escalate to full re-init if bounces fail, hold thermistors
 // steady across a brief bounce, and fail safe to "no probe" if no fresh data arrives for >= 1.5 s.
+
+// The band-pass: off is an exact pass-through, each corner lands where it was asked for (-3 dB), it
+// rolls off both sides, a re-prime starts without a step, and it stays well-behaved at a 0.1 Hz
+// high-pass on a 10 kHz stream - the case a float biquad gets badly wrong.
+static double bandGain(float hp, float lp, float fs, float f) {
+  mg::BandPass c = mg::bandCoeffs(hp, lp, fs);
+  mg::BandState st;
+  double acc = 0;
+  int n = (int)(fs * 40.f / (f < 1.f ? f : 1.f));          // long enough to settle at low frequencies
+  if (n > 2000000) n = 2000000;
+  int settle = n / 2, cnt = 0;
+  for (int i = 0; i < n; i++) {
+    float x = sinf(6.28318530718f * f * (float)(i % (int)(fs * 1000.f)) / fs);
+    float y = mg::bandStep(c, st, x);
+    if (i >= settle) { acc += (double)y * y; cnt++; }
+  }
+  return sqrt(acc / cnt) / sqrt(0.5);
+}
+static void testBand() {
+  mg::BandPass off = mg::bandCoeffs(0.f, 0.f, 10000.f);
+  CHECK(!mg::bandActive(off));
+  mg::BandState st;
+  CHECK(mg::bandStep(off, st, 123.4f) == 123.4f);
+  // nonsense corners switch that side off instead of filtering everything away
+  CHECK(mg::bandCoeffs(0.f, 6000.f, 10000.f).lpB == 0.f);          // past Nyquist
+  CHECK(mg::bandCoeffs(500.f, 200.f, 10000.f).hpA == 0.f);         // high-pass above the low-pass
+  CHECK(mg::bandCoeffs(500.f, 200.f, 10000.f).lpB > 0.f);
+  // -3 dB at the corner, within a few percent, both sides
+  CHECK(fabs(bandGain(0.f, 1000.f, 10000.f, 1000.f) - 0.7071) < 0.04);
+  CHECK(fabs(bandGain(10.f, 0.f, 10000.f, 10.f) - 0.7071) < 0.04);
+  CHECK(bandGain(0.f, 1000.f, 10000.f, 50.f) > 0.98);              // passband untouched
+  CHECK(bandGain(0.f, 200.f, 10000.f, 2000.f) < 0.03);             // a decade up: ~-40 dB
+  CHECK(bandGain(100.f, 0.f, 10000.f, 10.f) < 0.03);               // a decade down
+  CHECK(bandGain(5.f, 500.f, 10000.f, 60.f) > 0.95);               // band centre
+  CHECK(fabs(bandGain(0.1f, 0.f, 10000.f, 0.1f) - 0.7071) < 0.06); // tiny corner, still where asked
+  // DC is removed by the high-pass, kept by the low-pass
+  mg::BandPass hp = mg::bandCoeffs(1.f, 0.f, 1000.f), lp = mg::bandCoeffs(0.f, 10.f, 1000.f);
+  mg::BandState a, b;
+  float yh = 0, yl = 0;
+  for (int i = 0; i < 20000; i++) { yh = mg::bandStep(hp, a, 50.f); yl = mg::bandStep(lp, b, 50.f); }
+  CHECK(fabs(yh) < 0.01f && fabs(yl - 50.f) < 0.01f);
+  // primed: the first output after a reseed is the steady-state output, no step transient
+  mg::BandState p;
+  CHECK(fabs(mg::bandStep(lp, p, 80.f) - 80.f) < 1e-3f);
+  mg::BandState q;
+  CHECK(fabs(mg::bandStep(hp, q, 80.f)) < 1e-3f);
+  // a notch primed on a steady value outputs that value at once (no ring)
+  mg::Biquad n = mg::notchCoeffs(60.f, 10000.f, 12.f);
+  mg::BiquadState ns;
+  mg::biquadPrime(ns, 25.f);
+  CHECK(fabs(mg::biquadStep(n, ns, 25.f) - 25.f) < 1e-3f);
+  // config parse and clamps
+  mg::Config c;
+  bool pinsOk = true;
+  const char* j = "{\"filt\":{\"hp\":2.5,\"lp\":800}}";
+  CHECK(mg::cfgFromJson(j, strlen(j), c, &pinsOk));
+  CHECK(near(c.filt.hpHz, 2.5, 1e-4) && near(c.filt.lpHz, 800.0, 1e-3));
+  const char* j2 = "{\"filt\":{\"hp\":0,\"lp\":-5}}";
+  CHECK(mg::cfgFromJson(j2, strlen(j2), c, &pinsOk));
+  CHECK(c.filt.hpHz == 0.f && c.filt.lpHz == 0.f);
+  c.setDefaults();
+  CHECK(c.filt.hpHz == 0.f && c.filt.lpHz == 0.f);                 // default: band-pass off
+}
+
+// The sample clock: recovers a straight line from block arrival times that are always late by a
+// varying amount, re-anchors when samples are dropped, and ignores a nonsense rate.
+static void testSampleClock() {
+  const double tsTrue = 99.2;                                      // what the hardware really does
+  mg::SampleClock k;
+  k.reset(100.0);                                                  // what the config said
+  unsigned seed = 12345;
+  auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return (double)((seed >> 8) & 0xffff) / 65536.0; };
+  double t0 = 5e6, idx = 0;
+  for (int b = 0; b < 2000; b++) {                                 // ~26 s of 13 ms blocks
+    idx += 128;
+    double conv = t0 + idx * tsTrue;
+    double late = 20 + rnd() * 900 + (rnd() < 0.05 ? 4000 : 0);    // scheduling delay, some big ones
+    k.onBlock(idx, conv + late);
+  }
+  CHECK(k.valid && k.n >= 4 && k.locked());
+  CHECK(fabs(k.ts - tsTrue) < 0.005);                             // < 50 ppm
+  double err = k.at(idx) - (t0 + idx * tsTrue);
+  CHECK(err > -5 && err < 120);                                    // on the low envelope, tens of us
+  // samples dropped: every block suddenly 20 ms late -> re-anchor within a couple of seconds
+  double gap = 20000;
+  for (int b = 0; b < 300; b++) {
+    idx += 128;
+    k.onBlock(idx, t0 + idx * tsTrue + gap + 30 + rnd() * 300);
+  }
+  err = k.at(idx) - (t0 + idx * tsTrue + gap);
+  CHECK(err > -5 && err < 400);
+  CHECK(fabs(k.ts - tsTrue) < 0.005);                             // the rate survived the re-anchor
+  CHECK(k.locked());
+  // an explicit restart (ADC bounce) keeps the rate and re-locks within a fraction of a second
+  k.restart();
+  CHECK(!k.locked());
+  for (int b = 0; b < 30; b++) { idx += 128; k.onBlock(idx, t0 + idx * tsTrue + gap + 30 + rnd() * 300); }
+  CHECK(k.locked() && fabs(k.ts - tsTrue) < 0.005);
+  // early block pulls the line down at once
+  mg::SampleClock e;
+  e.reset(100.0);
+  e.onBlock(1000, 200000);
+  e.onBlock(2000, 290000);                                         // earlier than 100 us/sample allows
+  CHECK(e.at(2000) <= 290000.0 + 1e-6);
+}
+
+// Thermal trips need the condition to hold, not one bad window; a real one still trips fast.
+static void testSafetyGate() {
+  mg::SafetyLim lim{110.f, 140.f, 20.f, 20.f, true};
+  mg::SafetyIn ok{true, true, 90.f, 95.f, 1.f, 1.f};
+  mg::SafetyGate g;
+  CHECK(g.step(ok, lim, 250) == mg::TR_NONE);
+  mg::SafetyIn hot = ok;
+  hot.tC = 115.f;
+  CHECK(g.step(hot, lim, 250) == mg::TR_NONE);                    // one window over: not yet
+  CHECK(g.step(ok, lim, 250) == mg::TR_NONE);                     // back under: the count restarts
+  CHECK(g.step(hot, lim, 250) == mg::TR_NONE);
+  CHECK(g.step(hot, lim, 250) == mg::TR_COIL_TEMP);               // two in a row: trip (0.5 s)
+  g.reset();
+  mg::SafetyIn lost = ok;
+  lost.okF = false;
+  for (int i = 0; i < 5; i++) CHECK(g.step(lost, lim, 250) == mg::TR_NONE);   // 1.25 s: ride through
+  CHECK(g.step(lost, lim, 250) == mg::TR_PROBE);                  // 1.5 s: the probe really is gone
+  g.reset();
+  mg::SafetyLim noProbe = lim;
+  noProbe.needProbe = false;
+  for (int i = 0; i < 20; i++) CHECK(g.step(lost, noProbe, 250) == mg::TR_NONE);
+  g.reset();
+  mg::SafetyIn fast = ok;
+  fast.dtdtF = 30.f;
+  for (int i = 0; i < 7; i++) CHECK(g.step(fast, lim, 250) == mg::TR_NONE);
+  CHECK(g.step(fast, lim, 250) == mg::TR_FET_RATE);               // 2 s held
+  g.reset();
+  CHECK(g.step(hot, lim, 60000) == mg::TR_NONE);                  // a stalled loop is not 60 s held
+}
+
 static void testSenseWatch() {
   mg::SenseWatch w;
   w.reset(1000);
@@ -431,6 +569,9 @@ int main() {
   testEngine();
   testConfig();
   testFilt();
+  testBand();
+  testSampleClock();
+  testSafetyGate();
   testSenseWatch();
   testGh();
   if (failures) {

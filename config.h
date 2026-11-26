@@ -72,6 +72,8 @@ struct FiltCfg {
   bool notch;        // mains-hum notch enabled
   uint8_t notchHz;   // 50 or 60
   uint8_t specAvg;   // 0..4, spectrum frame-to-frame averaging (see filt.h filtSpecAlpha)
+  float hpHz;        // band-pass high-pass corner, Hz; 0 = off (see filt.h bandCoeffs)
+  float lpHz;        // band-pass low-pass corner, Hz; 0 = off
 };
 
 struct Config {
@@ -94,7 +96,7 @@ struct Config {
     led = LedCfg{0, Rgb{80.f, 200.f, 255.f}, 80, 0, 70.f, 110.f, 100};
     hall = HallCfg{1.4f, 1.4f, 3.3f, true};
     therm = ThermCfg{3950.f, 10.f, 10.f, false};
-    filt = FiltCfg{0, false, 60, 0};
+    filt = FiltCfg{0, false, 60, 0, 0.f, 0.f};
   }
 };
 
@@ -214,6 +216,8 @@ inline void cfgLeaf(void* vctx, const char* path, char type, double num, const c
     else if (!strcmp(k, "notch")) c.filt.notch = num != 0;
     else if (!strcmp(k, "notchHz")) c.filt.notchHz = i >= 55 ? 60 : 50;
     else if (!strcmp(k, "specAvg")) c.filt.specAvg = specAvgClamp(i);
+    else if (!strcmp(k, "hp")) c.filt.hpHz = f > 0.f ? clampf(f, 0.05f, 4000.f) : 0.f;
+    else if (!strcmp(k, "lp")) c.filt.lpHz = f > 0.f ? clampf(f, 0.5f, 4500.f) : 0.f;
     return;
   }
 }

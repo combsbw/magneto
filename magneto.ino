@@ -57,6 +57,7 @@
 #include "webui.h"
 #include "netprobe.h"
 #include "ghupdate.h"
+#include "safety.h"
 
 #define FW_VERSION "0.3.0"
 #define STA_JOIN_MS 12000
@@ -106,8 +107,8 @@ static uint32_t cfgDirtyAt = 0;
 // coil drive as last applied, so loop() only reprograms the timer on a real change
 static bool drvOn = false;
 static float drvHz = 0, drvPw = 0;
-static uint32_t stuckSince = 0;
-static SenseSnap snapCache;              // refreshed each loop pass for safety checks and the LEDs
+static SenseSnap snapCache;
+static mg::SafetyGate safeGate;          // thermal trips, debounced against one bad window              // refreshed each loop pass for safety checks and the LEDs
 
 // Safari opens spare connections and sends nothing; drop a silent one when another is waiting.
 // A fetch the page abandons client-side (its own AbortController timeout) can leave the same kind of
@@ -135,7 +136,7 @@ static DNSServer dns;
 #define UNLOCK() xSemaphoreGive(engMtx)
 
 static void applyFilt() {
-  SenseFilt filt{cfg.filt.mode, cfg.filt.notch, cfg.filt.notchHz, cfg.filt.specAvg};
+  SenseFilt filt{cfg.filt.mode, cfg.filt.notch, cfg.filt.notchHz, cfg.filt.specAvg, cfg.filt.hpHz, cfg.filt.lpHz};
   senseSetFilt(filt);
 }
 
@@ -242,9 +243,9 @@ static int stateJson(char* buf, size_t cap) {
     "{\"app\":\"magneto\",\"ver\":\"%s\",\"s\":\"%s\",\"t\":%.2f,\"total\":%.1f,\"stage\":%d,\"nwin\":%d,"
     "\"hz\":%.1f,\"pw\":%.0f,\"duty\":%.5f,\"trip\":%d,\"rev\":%lu,\"ota\":%d,\"up\":%lu,\"net\":\"%s\",\"fail\":%d,"
     "\"rst\":\"%s\",\"bo\":%lu,\"heap\":%lu,\"rssi\":%d,\"ps\":%d,\"fftn\":%d,"
-    "\"b0\":%.2f,\"b1\":%.2f,\"db\":%.3f,\"bm0\":%.2f,\"bm1\":%.2f,\"dbm\":%.3f,"
+    "\"b0\":%.2f,\"b1\":%.2f,\"db\":%.3f,\"db1\":%.3f,\"bm0\":%.2f,\"bm1\":%.2f,\"dbm\":%.3f,\"dbm1\":%.3f,"
     "\"ba0\":%.2f,\"ba1\":%.2f,\"brms\":%.2f,\"ss\":%.1f,\"f\":%.2f,\"fa\":%.2f,\"snr\":%.1f,"
-    "\"z0\":%d,\"z1\":%d,\"clip\":%d,\"fs\":%.0f,"
+    "\"z0\":%d,\"z1\":%d,\"zb\":%d,\"zf\":%d,\"zq\":%lu,\"clk\":%d,\"clip\":%d,\"fs\":%.0f,"
     "\"tc\":%.1f,\"tf\":%.1f,\"dc\":%.1f,\"dfr\":%.1f,\"okc\":%d,\"okf\":%d,"
     "\"pwmax\":%.0f,\"mga\":%d,\"mgh\":%.1f,\"hwpw\":%lu,\"hwper\":%lu}",
     FW_VERSION, mg::stateName(eng.state), t, eng.total, stageIdx, eng.nWin,
@@ -252,9 +253,10 @@ static int stateJson(char* buf, size_t cap) {
     (unsigned long)(millis() / 1000), radioSta ? "sta" : "ap", staFailed ? 1 : 0,
     rstName, (unsigned long)boCount, (unsigned long)ESP.getFreeHeap(), radioSta ? (int)WiFi.RSSI() : 0,
     sensePsram() ? 1 : 0, senseFftPoints(),
-    s.b0, s.b1, s.db, s.bMax0, s.bMax1, s.dbMax,
+    s.b0, s.b1, s.db, s.db1, s.bMax0, s.bMax1, s.dbMax, s.dbMax1,
     s.bAvg0, s.bAvg1, s.bRms0, s.statSec, s.pkHz, s.pkAmp, s.pkSnr,
-    s.zeroed0 ? 1 : 0, s.zeroed1 ? 1 : 0, s.clip ? 1 : 0, s.fs,
+    s.zeroed0 ? 1 : 0, s.zeroed1 ? 1 : 0, (int)s.zBusy, (int)s.zFail, (unsigned long)s.zSeq, s.clk ? 1 : 0,
+    s.clip ? 1 : 0, s.fs,
     isnan(s.tC) ? 0.0 : s.tC, isnan(s.tF) ? 0.0 : s.tF, s.dtdtC, s.dtdtF, s.okC ? 1 : 0, s.okF ? 1 : 0,
     mg::pwFor(hz, mg::PW_MAX_US, cfg.maxPw), magArmed(s) ? 1 : 0, magHoldMs / 1000.f,
     // Ground truth, read back off the pulse timer itself rather than from the plan: the on-time and
@@ -266,7 +268,7 @@ static int stateJson(char* buf, size_t cap) {
 }
 
 static void sendState() {
-  char buf[1320];
+  char buf[1500];
   lastApiMs = millis();
   if (stateJson(buf, sizeof buf) < 0) { sendJson(500, "{\"ok\":false}"); return; }
   sendJson(200, buf);
@@ -281,6 +283,14 @@ static void sendState() {
 // Returns nullptr when the command was accepted, otherwise a short error code for the page.
 static const char* runCmd(const char* cmd, float argHz, float argPw, int argCh, const char* argW) {
   lastApiMs = millis();
+  // Sensor commands first, outside the engine lock: a clear waits (briefly) for the sampler to have
+  // done it, so the reply carries the cleared numbers rather than a snapshot from before the tap.
+  if (!strcmp(cmd, "zero")) { senseZero(argCh); return nullptr; }
+  if (!strcmp(cmd, "zeroclear")) { senseZeroClear(argCh); return nullptr; }
+  if (!strcmp(cmd, "clear")) {
+    senseClearStats(!strcmp(argW, "max") ? SENSE_CLR_MAX : (!strcmp(argW, "avg") ? SENSE_CLR_AVG : SENSE_CLR_ALL));
+    return nullptr;
+  }
   int64_t now = esp_timer_get_time();
   const char* err = nullptr;
   SenseSnap s;
@@ -316,12 +326,6 @@ static const char* runCmd(const char* cmd, float argHz, float argPw, int argCh, 
       eng.tripReset();
       prefs.putUChar("trip", 0);
     }
-  } else if (!strcmp(cmd, "zero")) {
-    senseZero(argCh);
-  } else if (!strcmp(cmd, "zeroclear")) {
-    senseZeroClear(argCh);
-  } else if (!strcmp(cmd, "clear")) {
-    senseClearStats(!strcmp(argW, "max") ? SENSE_CLR_MAX : (!strcmp(argW, "avg") ? SENSE_CLR_AVG : SENSE_CLR_ALL));
   } else {
     err = "cmd";
   }
@@ -416,23 +420,39 @@ static char* bigBuf(size_t cap) {
 // through them continuously) and the ones most worth never leaving to a keep-alive idle-timeout: each
 // closes its own connection deterministically rather than waiting to be recycled, trading one extra
 // TCP handshake per poll for a socket that can never be left stranded.
+// Number formatting for the big arrays: NaN as null (JSON has no NaN), and no more digits than the
+// sensor resolves.
+// Values are clamped to 7 integer digits so every number fits the 14 bytes per value the callers
+// budget, and the running length can never pass the buffer.
+static int putNum(char* out, size_t cap, bool comma, float v, int dec) {
+  if (!isfinite(v)) return snprintf(out, cap, comma ? ",null" : "null");
+  if (v > 9999999.f) v = 9999999.f;
+  if (v < -9999999.f) v = -9999999.f;
+  return snprintf(out, cap, dec == 2 ? (comma ? ",%.2f" : "%.2f") : (comma ? ",%.1f" : "%.1f"), v);
+}
+
+// us = window length in microseconds (ms is still accepted), ch 0-3 = B center, B perimeter,
+// dB/dt center, dB/dt perimeter, trig=1 = align on a coil rising edge.
 static void handleWave() {
   lastApiMs = millis();
   server.sendHeader("Connection", "close");
   int ch = server.arg("ch").toInt();
-  uint32_t ms = (uint32_t)server.arg("ms").toInt();
-  if (ms < 10) ms = 10;
-  if (ms > 10000) ms = 10000;
+  uint32_t us = server.hasArg("us") ? (uint32_t)server.arg("us").toInt() : (uint32_t)server.arg("ms").toInt() * 1000u;
+  if (us < 200) us = 200;
+  if (us > 10000000) us = 10000000;
+  bool trig = server.arg("trig") == "1";
   static float mn[240], mx[240];
-  float fs = 0;
-  int n = senseWave(ch, ms, 240, mn, mx, &fs);
-  size_t cap = 100 + (size_t)n * 26;
+  float fs = 0, x0 = 0, dx = 0;
+  bool trigOk = false;
+  int n = senseWave(ch, us, trig, 240, mn, mx, &fs, &x0, &dx, &trigOk);
+  size_t cap = 200 + (size_t)n * 28;
   char* out = bigBuf(cap);
   if (!out) { sendJson(500, "{\"ok\":false}"); return; }
-  int p = snprintf(out, cap, "{\"fs\":%.0f,\"ms\":%u,\"n\":%d,\"mn\":[", fs, (unsigned)ms, n);
-  for (int i = 0; i < n; i++) p += snprintf(out + p, cap - p, "%s%.1f", i ? "," : "", mn[i]);
+  int p = snprintf(out, cap, "{\"fs\":%.0f,\"us\":%lu,\"ch\":%d,\"n\":%d,\"x0\":%.1f,\"dx\":%.2f,\"trig\":%d,\"mn\":[",
+                   fs, (unsigned long)us, ch, n, x0, dx, trigOk ? 1 : 0);
+  for (int i = 0; i < n; i++) p += putNum(out + p, cap - p, i, mn[i], 1);
   p += snprintf(out + p, cap - p, "],\"mx\":[");
-  for (int i = 0; i < n; i++) p += snprintf(out + p, cap - p, "%s%.1f", i ? "," : "", mx[i]);
+  for (int i = 0; i < n; i++) p += putNum(out + p, cap - p, i, mx[i], 1);
   snprintf(out + p, cap - p, "]}");
   sendJson(200, out);
 }
@@ -454,17 +474,57 @@ static void handleSpec() {
   sendJson(200, out);
 }
 
+// win = microseconds folded around the rising edge (0 = the whole period).
 static void handleFold() {
   lastApiMs = millis();
   server.sendHeader("Connection", "close");
-  static float bins[240];
-  uint32_t per = 0, cyc = 0;
-  int n = senseFold(bins, 240, &per, &cyc);
-  size_t cap = 120 + (size_t)n * 13;
+  uint32_t win = (uint32_t)server.arg("win").toInt();
+  static float c[240], pp[240];
+  uint32_t per = 0, on = 0, cyc = 0;
+  float w = 0, pre = 0;
+  int filled = 0;
+  int n = senseFold(win, c, pp, 240, &per, &on, &cyc, &w, &pre, &filled);
+  size_t cap = 240 + (size_t)n * 28;
   char* out = bigBuf(cap);
   if (!out) { sendJson(500, "{\"ok\":false}"); return; }
-  int p = snprintf(out, cap, "{\"per\":%u,\"cyc\":%u,\"n\":%d,\"b\":[", (unsigned)per, (unsigned)cyc, n);
-  for (int i = 0; i < n; i++) p += snprintf(out + p, cap - p, "%s%.1f", i ? "," : "", bins[i]);
+  int p = snprintf(out, cap, "{\"per\":%lu,\"on\":%lu,\"cyc\":%lu,\"n\":%d,\"win\":%.1f,\"pre\":%.1f,\"hit\":%d,\"run\":%d,\"b\":[",
+                   (unsigned long)per, (unsigned long)on, (unsigned long)cyc, n, w, pre, filled, coilRunning() ? 1 : 0);
+  for (int i = 0; i < n; i++) p += putNum(out + p, cap - p, i, c[i], 1);
+  p += snprintf(out + p, cap - p, "],\"p\":[");
+  for (int i = 0; i < n; i++) p += putNum(out + p, cap - p, i, pp[i], 1);
+  snprintf(out + p, cap - p, "]}");
+  sendJson(200, out);
+}
+
+// Live stream for the realtime chart: from = the "next" the previous reply gave. 8 numbers per
+// bucket: B center min/max, B perimeter min/max, dB/dt center min/max, dB/dt perimeter min/max.
+// st=1 also carries the whole /api/state object as "st", so on the Measure tab one request does
+// the work of two and the stream can be polled as often as the state is.
+static void handleLive() {
+  lastApiMs = millis();
+  server.sendHeader("Connection", "close");
+  uint32_t from = (uint32_t)strtoul(server.arg("from").c_str(), nullptr, 10);
+  int maxN = server.hasArg("max") ? server.arg("max").toInt() : 200;
+  if (maxN < 1) maxN = 1;
+  if (maxN > 240) maxN = 240;
+  static float* buf = nullptr;                    // 7.7 kB: PSRAM when there is some, and only once asked for
+  if (!buf) buf = (float*)heap_caps_malloc(240 * 8 * sizeof(float), MALLOC_CAP_SPIRAM);
+  if (!buf) buf = (float*)malloc(240 * 8 * sizeof(float));
+  if (!buf) { sendJson(500, "{\"ok\":false}"); return; }
+  uint32_t start = 0;
+  float dt = 0;
+  int n = senseLive(from, maxN, buf, &start, &dt);
+  static char st[1500];
+  int stLen = 0;
+  if (server.arg("st") == "1") stLen = stateJson(st, sizeof st);
+  if (stLen < 0) stLen = 0;
+  size_t cap = 200 + (size_t)stLen + (size_t)n * 8 * 14;
+  char* out = bigBuf(cap);
+  if (!out) { sendJson(500, "{\"ok\":false}"); return; }
+  int p = snprintf(out, cap, "{%s%s%s\"start\":%lu,\"next\":%lu,\"dt\":%.4f,\"n\":%d,\"d\":[",
+                   stLen ? "\"st\":" : "", stLen ? st : "", stLen ? "," : "",
+                   (unsigned long)start, (unsigned long)(start + (uint32_t)n), dt, n);
+  for (int i = 0; i < n * 8; i++) p += putNum(out + p, cap - p, i, buf[i], 1);
   snprintf(out + p, cap - p, "]}");
   sendJson(200, out);
 }
@@ -967,8 +1027,9 @@ static void magWatch(const SenseSnap& s, uint32_t ms) {
   lastMs = ms;
   if (!magArmed(s) || otaBusy || updPhase || rebootAtMs) { magHoldMs = 0; magPeak = 0; return; }
   float b = 0;                                    // only channels with a stored zero are believed
-  if (s.zeroed0 && fabsf(s.b0) > b) b = fabsf(s.b0);
-  if (s.zeroed1 && fabsf(s.b1) > b) b = fabsf(s.b1);
+  // the unfiltered field: a band-pass high-pass would take a held magnet's steady field out entirely
+  if (s.zeroed0 && fabsf(s.br0) > b) b = fabsf(s.br0);
+  if (s.zeroed1 && fabsf(s.br1) > b) b = fabsf(s.br1);
   if (b < cfg.safe.magUt) { magHoldMs = 0; magPeak = 0; return; }
   if (b > magPeak) magPeak = b;
   if (dt > 1000) dt = 1000;                       // a long gap (a stalled loop) must not count as held time
@@ -1016,29 +1077,31 @@ static void safetyAndDrive() {
     drvPw = pw;
   }
 
-  // stuck-pin watchdog: the gate high for longer than one on-time plus margin means the ISR died
-  if (coilLevel() == 1 && drvOn && coilPeriodUs() > 0) {
-    if (!stuckSince) stuckSince = ms ? ms : 1;
-    else if ((uint32_t)(ms - stuckSince) > coilOnUs() / 1000 + 80) { stuckSince = 0; tripTo(mg::TR_STUCK); return; }
-  } else {
-    stuckSince = 0;
-  }
+  // Stuck-gate watchdog, from the ISR's own rising-edge time: high for longer than the on-time plus
+  // 20 ms means the ISR died. (It used to sample the pin from this loop and trip when two looks in a
+  // row 80 ms apart both saw it high - which a long HTTP send or flash write between two looks that
+  // each happened to land inside an ordinary pulse could satisfy, with nothing wrong at all.)
+  if (drvOn && coilStuck(now)) { tripTo(mg::TR_STUCK); return; }
 
   if ((uint32_t)(ms - safeAt) < 250) return;
+  uint32_t dtSafe = safeAt ? (uint32_t)(ms - safeAt) : 250;
   safeAt = ms;
   senseCopy(snapCache);
   magWatch(snapCache, ms);
-  if (!cfg.safe.on) return;
   LOCK();
   bool running = eng.state == mg::ST_RUN;
   UNLOCK();
-  if (!running) return;
+  if (!cfg.safe.on || !running) { safeGate.reset(); return; }
   const SenseSnap& s = snapCache;
-  if (cfg.safe.needProbe && (!s.okC || !s.okF)) { tripTo(mg::TR_PROBE); return; }
-  if (s.okC && s.tC > cfg.safe.coilMaxF) { tripTo(mg::TR_COIL_TEMP); return; }
-  if (s.okF && s.tF > cfg.safe.fetMaxF) { tripTo(mg::TR_FET_TEMP); return; }
-  if (s.okC && s.dtdtC > cfg.safe.coilRateF) { tripTo(mg::TR_COIL_RATE); return; }
-  if (s.okF && s.dtdtF > cfg.safe.fetRateF) { tripTo(mg::TR_FET_RATE); return; }
+  mg::SafetyIn in{s.okC, s.okF, s.tC, s.tF, s.dtdtC, s.dtdtF};
+  mg::SafetyLim lim{cfg.safe.coilMaxF, cfg.safe.fetMaxF, cfg.safe.coilRateF, cfg.safe.fetRateF, cfg.safe.needProbe};
+  mg::TripCode tc = safeGate.step(in, lim, dtSafe);
+  if (tc != mg::TR_NONE) {
+    Serial.printf("safety: trip %d  coil %.1fF ok%d %.1fF/min  fet %.1fF ok%d %.1fF/min\n", (int)tc,
+                  s.tC, s.okC ? 1 : 0, s.dtdtC, s.tF, s.okF ? 1 : 0, s.dtdtF);
+    safeGate.reset();
+    tripTo(tc);
+  }
 }
 
 // ---- setup / loop -----------------------------------------------------------------------------------------------------
@@ -1135,6 +1198,7 @@ void setup() {
   server.on("/api/wave", HTTP_GET, handleWave);
   server.on("/api/spec", HTTP_GET, handleSpec);
   server.on("/api/fold", HTTP_GET, handleFold);
+  server.on("/api/live", HTTP_GET, handleLive);
   server.on("/api/reboot", HTTP_POST, handleReboot);
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateData);
   server.onNotFound(handleNotFound);
